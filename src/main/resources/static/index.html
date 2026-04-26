@@ -128,15 +128,10 @@
             <header class="pod-details-head">
                 <strong id="detailsTitle">Pod</strong>
                 <button id="openLogsButton" class="toolbar-toggle" type="button">Logs</button>
+                <button id="forwardPodButton" class="toolbar-toggle" type="button">Forward...</button>
                 <button id="closeDetailsButton" class="panel-action-button" type="button" title="Close details">×</button>
             </header>
             <div class="pod-details-body">
-                <section class="details-section">
-                    <h3>Metrics</h3>
-                    <div class="metrics-placeholder">
-                        <div class="metrics-spinner">( )</div>
-                    </div>
-                </section>
                 <section class="details-section">
                     <h3>Properties</h3>
                     <div id="detailsProperties" class="details-table"></div>
@@ -144,6 +139,18 @@
                 <section class="details-section">
                     <h3>Containers</h3>
                     <div id="detailsContainers" class="details-table"></div>
+                </section>
+                <section class="details-section">
+                    <h3>Conditions</h3>
+                    <div id="detailsConditions" class="details-table"></div>
+                </section>
+                <section class="details-section">
+                    <h3>Labels</h3>
+                    <div id="detailsLabels" class="details-table"></div>
+                </section>
+                <section class="details-section">
+                    <h3>Annotations</h3>
+                    <div id="detailsAnnotations" class="details-table"></div>
                 </section>
             </div>
         </section>

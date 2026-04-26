@@ -37,7 +37,11 @@ const els = {
     detailsTitle: document.querySelector("#detailsTitle"),
     detailsProperties: document.querySelector("#detailsProperties"),
     detailsContainers: document.querySelector("#detailsContainers"),
+    detailsConditions: document.querySelector("#detailsConditions"),
+    detailsLabels: document.querySelector("#detailsLabels"),
+    detailsAnnotations: document.querySelector("#detailsAnnotations"),
     openLogsButton: document.querySelector("#openLogsButton"),
+    forwardPodButton: document.querySelector("#forwardPodButton"),
     closeDetailsButton: document.querySelector("#closeDetailsButton"),
     emptyPods: document.querySelector("#emptyPods"),
     podCount: document.querySelector("#podCount"),
@@ -516,15 +520,20 @@ function renderPodDetails() {
         detailRow("Namespace", pod.namespace),
         detailRow("Labels", `${Object.keys(pod.labels || {}).length} Labels`),
         detailRow("Annotations", `${Object.keys(pod.annotations || {}).length} Annotations`),
+        detailRow("Controlled By", pod.controlledBy || ""),
         detailRow("Status", pod.phase, statusClass(pod)),
         detailRow("Node", pod.nodeName),
         detailRow("Pod IP", pod.podIp),
+        detailRow("Pod IPs", (pod.podIps || []).join(", ") || pod.podIp),
+        detailRow("Host IP", pod.hostIp || ""),
         detailRow("Service Account", pod.serviceAccount || "default"),
+        detailRow("QoS Class", pod.qosClass || ""),
         detailRow("Ready", pod.ready),
         detailRow("Restarts", pod.restarts)
     ].join("");
 
-    els.detailsContainers.innerHTML = (pod.containers || []).map(container => {
+    const containers = pod.containerDetails && pod.containerDetails.length > 0 ? pod.containerDetails : pod.containers || [];
+    els.detailsContainers.innerHTML = containers.map(container => {
         const ports = (pod.ports || [])
             .filter(port => port.containerName === container.name)
             .map(port => portRow(pod, port))
@@ -532,11 +541,20 @@ function renderPodDetails() {
         return `<div class="container-detail">
             <div class="container-detail-name">${escapeHtml(container.name)}</div>
             ${detailRow("Status", container.state, container.ready ? "status-running" : "status-warning")}
+            ${detailRow("Last Status", container.lastState || "")}
             ${detailRow("Image", container.image)}
             ${detailRow("Restarts", container.restartCount)}
             <div class="details-row"><span>Ports</span><span>${ports}</span></div>
+            ${detailRow("Environment", listSummary(container.environment, "Environmental Variables"))}
+            ${detailRow("Mounts", listSummary(container.mounts, "Mounts"))}
+            ${detailRow("Requests", container.requests || "")}
+            ${detailRow("Limits", container.limits || "")}
         </div>`;
     }).join("");
+
+    els.detailsConditions.innerHTML = listRows(pod.conditions || []);
+    els.detailsLabels.innerHTML = keyValueRows(pod.labels || {});
+    els.detailsAnnotations.innerHTML = keyValueRows(pod.annotations || {});
 }
 
 function closePodDetails() {
@@ -553,6 +571,29 @@ function detailRow(label, value, valueClass = "") {
         <span>${escapeHtml(label)}</span>
         <span class="${escapeHtml(valueClass)}">${escapeHtml(value ?? "")}</span>
     </div>`;
+}
+
+function listSummary(values, noun) {
+    const count = (values || []).length;
+    if (count === 0) {
+        return "";
+    }
+    return `${count} ${noun}`;
+}
+
+function listRows(values) {
+    if (!values || values.length === 0) {
+        return `<div class="details-row"><span></span><span class="details-muted">No items</span></div>`;
+    }
+    return values.map((value, index) => detailRow(String(index + 1), value)).join("");
+}
+
+function keyValueRows(values) {
+    const entries = Object.entries(values || {});
+    if (entries.length === 0) {
+        return `<div class="details-row"><span></span><span class="details-muted">No items</span></div>`;
+    }
+    return entries.map(([key, value]) => detailRow(key, value)).join("");
 }
 
 function portRow(pod, port) {
@@ -586,11 +627,21 @@ async function openDetailsLogs() {
 }
 
 async function startPortForward(namespace, podName, remotePort) {
-    const localValue = window.prompt("Local port", String(remotePort));
+    const remoteValue = remotePort || window.prompt("Remote pod port");
+    if (remoteValue === null) {
+        return;
+    }
+    const parsedRemotePort = Number(remoteValue);
+    if (!Number.isInteger(parsedRemotePort) || parsedRemotePort < 1) {
+        setStatus("error", "Invalid remote port");
+        return;
+    }
+
+    const localValue = window.prompt("Local port", String(parsedRemotePort));
     if (localValue === null) {
         return;
     }
-    const localPort = Number(localValue || remotePort);
+    const localPort = Number(localValue || parsedRemotePort);
     if (!Number.isInteger(localPort) || localPort < 1) {
         setStatus("error", "Invalid local port");
         return;
@@ -600,7 +651,7 @@ async function startPortForward(namespace, podName, remotePort) {
     const response = await api(`/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/port-forward`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remotePort: Number(remotePort), localPort })
+        body: JSON.stringify({ remotePort: parsedRemotePort, localPort })
     });
     const session = await response.json();
     setStatus("ok", `Forward ${session.localPort}:${session.remotePort}`);
@@ -1375,6 +1426,15 @@ els.podsBody.addEventListener("click", event => {
 if (els.openLogsButton) {
     els.openLogsButton.addEventListener("click", () => {
         openDetailsLogs().catch(handleError);
+    });
+}
+
+if (els.forwardPodButton) {
+    els.forwardPodButton.addEventListener("click", () => {
+        if (!state.detailsPod) {
+            return;
+        }
+        startPortForward(state.detailsPod.namespace, state.detailsPod.name).catch(handleError);
     });
 }
 

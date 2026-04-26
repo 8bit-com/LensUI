@@ -2,6 +2,7 @@ package dev.codex.k8slens.service;
 
 import dev.codex.k8slens.config.KubernetesLensProperties;
 import dev.codex.k8slens.model.ContainerSummary;
+import dev.codex.k8slens.model.PodContainerDetails;
 import dev.codex.k8slens.model.PodDetails;
 import dev.codex.k8slens.model.PodPortSummary;
 import dev.codex.k8slens.model.PodSummary;
@@ -10,14 +11,18 @@ import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.openapi.models.V1Container;
 import io.kubernetes.client.openapi.models.V1ContainerPort;
 import io.kubernetes.client.openapi.models.V1ContainerState;
+import io.kubernetes.client.openapi.models.V1EnvVar;
+import io.kubernetes.client.openapi.models.V1PodIP;
 import io.kubernetes.client.openapi.models.V1ContainerStatus;
 import io.kubernetes.client.openapi.models.V1Namespace;
 import io.kubernetes.client.openapi.models.V1NamespaceList;
 import io.kubernetes.client.openapi.models.V1Pod;
 import io.kubernetes.client.openapi.models.V1PodCondition;
 import io.kubernetes.client.openapi.models.V1PodList;
+import io.kubernetes.client.openapi.models.V1ResourceRequirements;
 import io.kubernetes.client.openapi.models.V1PodSpec;
 import io.kubernetes.client.openapi.models.V1PodStatus;
+import io.kubernetes.client.openapi.models.V1VolumeMount;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -154,6 +159,7 @@ public class KubernetesLensService {
 
     private PodDetails toDetails(V1Pod pod) {
         PodSummary summary = toSummary(pod);
+        V1PodStatus status = pod.getStatus();
         List<String> conditions = Optional.ofNullable(pod.getStatus())
                 .map(V1PodStatus::getConditions)
                 .orElse(Collections.emptyList())
@@ -170,7 +176,37 @@ public class KubernetesLensService {
                         ? ""
                         : pod.getMetadata().getCreationTimestamp().toString(),
                 pod.getSpec() == null ? "" : nullToBlank(pod.getSpec().getServiceAccountName()),
-                ports(pod));
+                status == null ? "" : nullToBlank(status.getHostIP()),
+                status == null ? "" : nullToBlank(status.getQosClass()),
+                controlledBy(pod),
+                podIps(pod),
+                ports(pod),
+                containerDetails(pod));
+    }
+
+    private String controlledBy(V1Pod pod) {
+        return Optional.ofNullable(pod.getMetadata())
+                .map(metadata -> metadata.getOwnerReferences())
+                .orElse(Collections.emptyList())
+                .stream()
+                .findFirst()
+                .map(owner -> nullToBlank(owner.getKind()) + " " + nullToBlank(owner.getName()))
+                .orElse("");
+    }
+
+    private List<String> podIps(V1Pod pod) {
+        V1PodStatus status = pod.getStatus();
+        List<String> ips = Optional.ofNullable(status)
+                .map(V1PodStatus::getPodIPs)
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(V1PodIP::getIp)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toList());
+        if (ips.isEmpty() && status != null && StringUtils.hasText(status.getPodIP())) {
+            return List.of(status.getPodIP());
+        }
+        return ips;
     }
 
     private List<PodPortSummary> ports(V1Pod pod) {
@@ -190,6 +226,60 @@ public class KubernetesLensService {
                 nullToBlank(containerName),
                 port.getContainerPort(),
                 nullToBlank(port.getProtocol()));
+    }
+
+    private List<PodContainerDetails> containerDetails(V1Pod pod) {
+        V1PodSpec spec = pod.getSpec();
+        Map<String, V1ContainerStatus> statusesByName = Optional.ofNullable(pod.getStatus())
+                .map(V1PodStatus::getContainerStatuses)
+                .orElse(Collections.emptyList())
+                .stream()
+                .collect(Collectors.toMap(V1ContainerStatus::getName, Function.identity(), (left, right) -> left));
+
+        return Optional.ofNullable(spec)
+                .map(V1PodSpec::getContainers)
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(container -> toContainerDetails(container, statusesByName.get(container.getName())))
+                .collect(Collectors.toList());
+    }
+
+    private PodContainerDetails toContainerDetails(V1Container container, V1ContainerStatus status) {
+        V1ResourceRequirements resources = container.getResources();
+        return new PodContainerDetails(
+                nullToBlank(container.getName()),
+                nullToBlank(container.getImage()),
+                status != null && Boolean.TRUE.equals(status.getReady()),
+                status == null || status.getRestartCount() == null ? 0 : status.getRestartCount(),
+                status == null ? "Unknown" : state(status.getState()),
+                status == null ? "" : state(status.getLastState()),
+                resources == null ? "" : quantityMap(resources.getRequests()),
+                resources == null ? "" : quantityMap(resources.getLimits()),
+                Optional.ofNullable(container.getEnv()).orElse(Collections.emptyList()).stream()
+                        .map(V1EnvVar::getName)
+                        .filter(StringUtils::hasText)
+                        .sorted()
+                        .collect(Collectors.toList()),
+                Optional.ofNullable(container.getVolumeMounts()).orElse(Collections.emptyList()).stream()
+                        .map(this::formatMount)
+                        .collect(Collectors.toList()));
+    }
+
+    private String formatMount(V1VolumeMount mount) {
+        String source = nullToBlank(mount.getName());
+        String path = nullToBlank(mount.getMountPath());
+        String mode = Boolean.TRUE.equals(mount.getReadOnly()) ? " (ro)" : "";
+        return path + (StringUtils.hasText(source) ? " from " + source : "") + mode;
+    }
+
+    private String quantityMap(Map<String, ?> values) {
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        return values.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + ": " + entry.getValue())
+                .collect(Collectors.joining(", "));
     }
 
     private PodSummary toSummary(V1Pod pod) {
