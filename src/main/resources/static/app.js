@@ -57,6 +57,158 @@ const els = {
     statusCluster: document.querySelector("#statusCluster")
 };
 
+const UI_STATE_KEY = "k8sLensUiState";
+
+function loadUiState() {
+    try {
+        return JSON.parse(localStorage.getItem(UI_STATE_KEY)) || {};
+    } catch {
+        return {};
+    }
+}
+
+function saveUiState(updates = {}) {
+    const current = loadUiState();
+    localStorage.setItem(UI_STATE_KEY, JSON.stringify({
+        ...current,
+        ...updates
+    }));
+}
+
+function saveLogTabsState() {
+    saveActiveLogTab();
+
+    saveUiState({
+        logTabs: state.logTabs.map(tab => ({
+            id: tab.id,
+            pod: tab.pod,
+            selectedContainer: tab.selectedContainer,
+            currentTailLines: tab.currentTailLines,
+            logTailStep: tab.logTailStep,
+            logsExhausted: tab.logsExhausted,
+            previousPodLogsOrigin: tab.previousPodLogsOrigin
+        })),
+        activeLogTabId: state.activeLogTabId,
+        nextLogTabId: state.nextLogTabId
+    });
+}
+
+function restoreUiState() {
+    const saved = loadUiState();
+
+    if (typeof saved.logsAutoRefresh === "boolean") {
+        state.logsAutoRefresh = saved.logsAutoRefresh;
+        els.autoRefreshButton.classList.toggle("active", state.logsAutoRefresh);
+        els.autoRefreshButton.textContent = state.logsAutoRefresh ? "Live" : "Paused";
+    }
+
+    if (typeof saved.compactJsonLogs === "boolean") {
+        state.compactJsonLogs = saved.compactJsonLogs;
+        els.compactJsonButton.classList.toggle("active", state.compactJsonLogs);
+    }
+
+    if (saved.logRefreshInterval) {
+        els.logRefreshInterval.value = saved.logRefreshInterval;
+    }
+
+    if (saved.tailLines) {
+        els.tailInput.value = saved.tailLines;
+        state.currentTailLines = Number(saved.tailLines);
+        state.logTailStep = Number(saved.tailLines);
+    }
+
+    if (saved.logsExpanded) {
+        els.lens.classList.add("logs-expanded");
+        els.expandLogsButton.textContent = "🗗";
+        els.expandLogsButton.title = "Restore logs panel";
+    }
+
+    if (saved.logsCollapsed) {
+        els.lens.classList.add("logs-collapsed");
+        els.collapseLogsButton.textContent = "˄";
+        els.collapseLogsButton.title = "Restore logs panel";
+    }
+}
+
+async function restoreSavedLogTabs() {
+    const saved = loadUiState();
+
+    if (!Array.isArray(saved.logTabs) || saved.logTabs.length === 0) {
+        createLogTab({ silent: true });
+        return;
+    }
+
+    state.logTabs = saved.logTabs.map(tab => ({
+        id: tab.id,
+        pod: tab.pod || null,
+        selectedContainer: tab.selectedContainer || "",
+        rawLogs: "",
+        logMatches: [],
+        activeLogMatchIndex: -1,
+        currentTailLines: tab.currentTailLines || Math.max(1, Number(els.tailInput.value || 300)),
+        logTailStep: tab.logTailStep || Math.max(1, Number(els.tailInput.value || 300)),
+        logsExhausted: Boolean(tab.logsExhausted),
+        previousPodLogsOrigin: tab.previousPodLogsOrigin || null
+    }));
+
+    state.activeLogTabId = saved.activeLogTabId || state.logTabs[0].id;
+    state.nextLogTabId = saved.nextLogTabId || state.logTabs.length + 1;
+
+    if (!state.logTabs.some(tab => tab.id === state.activeLogTabId)) {
+        state.activeLogTabId = state.logTabs[0].id;
+    }
+
+    renderLogTabs();
+
+    const active = activeLogTab();
+
+    if (!active || !active.pod) {
+        restoreLogTab(active || state.logTabs[0]);
+        return;
+    }
+
+    try {
+        setStatus("loading", "Loading pod");
+
+        const response = await api(`/api/pods/${encodeURIComponent(active.pod.namespace)}/${encodeURIComponent(active.pod.name)}`);
+        const fullPod = await response.json();
+
+        active.pod = fullPod;
+
+        state.selectedPod = fullPod;
+        state.selectedContainer = active.selectedContainer || fullPod.containers?.[0]?.name || "";
+        state.rawLogs = "";
+        state.logMatches = [];
+        state.activeLogMatchIndex = -1;
+        state.currentTailLines = active.currentTailLines || Math.max(1, Number(els.tailInput.value || 300));
+        state.logTailStep = active.logTailStep || state.currentTailLines;
+        state.logsExhausted = Boolean(active.logsExhausted);
+        state.previousPodLogsOrigin = active.previousPodLogsOrigin || null;
+
+        renderSelectedPod();
+        renderPods();
+
+        els.logsView.textContent = "Loading logs...";
+
+        const logs = await fetchCurrentLogs();
+        renderLogs(logs);
+
+        updateActiveLogTab({
+            pod: fullPod,
+            selectedContainer: state.selectedContainer
+        });
+
+        restartLogsAutoRefresh();
+        setStatus("ok", "Ready");
+    } catch (error) {
+        els.logsView.textContent = error.message || "Logs loading error";
+        setStatus("error", "Logs error");
+        console.error(error);
+    } finally {
+        state.logsLoading = false;
+    }
+}
+
 initLogsResizer();
 
 async function api(path, options = {}) {
@@ -164,6 +316,7 @@ function renderPods() {
 
 function createLogTab(options = {}) {
     saveActiveLogTab();
+
     const tab = {
         id: `logs-tab-${state.nextLogTabId++}`,
         pod: null,
@@ -176,10 +329,12 @@ function createLogTab(options = {}) {
         logsExhausted: false,
         previousPodLogsOrigin: null
     };
+
     state.logTabs.push(tab);
     state.activeLogTabId = tab.id;
     restoreLogTab(tab);
     renderLogTabs();
+    saveLogTabsState();
 
     if (!options.silent) {
         setStatus("ok", "Select a pod");
@@ -224,6 +379,10 @@ function saveActiveLogTab() {
 }
 
 function restoreLogTab(tab) {
+    if (!tab) {
+        return;
+    }
+
     state.selectedPod = tab.pod;
     state.selectedContainer = tab.selectedContainer || "";
     state.rawLogs = tab.rawLogs || "";
@@ -245,9 +404,11 @@ function updateActiveLogTab(updates = {}) {
     if (!tab) {
         return;
     }
+
     Object.assign(tab, updates);
     saveActiveLogTab();
     renderLogTabs();
+    saveLogTabsState();
 }
 
 function switchLogTab(tabId) {
@@ -263,6 +424,12 @@ function switchLogTab(tabId) {
     saveActiveLogTab();
     state.activeLogTabId = tab.id;
     restoreLogTab(tab);
+    renderLogTabs();
+    saveLogTabsState();
+
+    if (tab.pod) {
+        refreshLogsSilently().catch(handleError);
+    }
 }
 
 function closeLogTab(tabId) {
@@ -280,6 +447,7 @@ function closeLogTab(tabId) {
             });
             restoreLogTab(tab);
             renderLogTabs();
+            saveLogTabsState();
         }
         return;
     }
@@ -291,6 +459,7 @@ function closeLogTab(tabId) {
 
     const closingActive = tabId === state.activeLogTabId;
     state.logTabs.splice(index, 1);
+
     if (closingActive) {
         const nextTab = state.logTabs[Math.min(index, state.logTabs.length - 1)];
         state.activeLogTabId = nextTab.id;
@@ -298,18 +467,22 @@ function closeLogTab(tabId) {
     } else {
         renderLogTabs();
     }
+
+    saveLogTabsState();
 }
 
 function resetLogTabs() {
     state.logTabs = [];
     state.activeLogTabId = "";
     createLogTab({ silent: true });
+    saveLogTabsState();
 }
 
 async function selectPod(namespace, name, options = {}) {
     if (!options.keepPreviousPodOrigin) {
         state.previousPodLogsOrigin = null;
     }
+
     setStatus("loading", "Loading pod");
     const response = await api(`/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
     state.selectedPod = await response.json();
@@ -319,6 +492,7 @@ async function selectPod(namespace, name, options = {}) {
     renderPods();
     await loadLogs();
     updateActiveLogTab({ pod: state.selectedPod });
+    saveLogTabsState();
     setStatus("ok", "Ready");
 }
 
@@ -331,10 +505,12 @@ function renderSelectedPod() {
 
     els.selectedMeta.innerHTML = `Displaying logs from Namespace: <span class="namespace-link">${escapeHtml(pod.namespace)}</span> for Pod: <span class="pod-link">${escapeHtml(pod.name)}</span>.`;
 
+    const containers = pod.containers || [];
     const containerOptions = [`<option value="">All Containers</option>`].concat(
-        pod.containers.map(container =>
+        containers.map(container =>
             `<option value="${escapeHtml(container.name)}">${escapeHtml(container.name)}</option>`)
     );
+
     els.containerSelect.innerHTML = containerOptions.join("");
     els.containerSelect.value = state.selectedContainer;
 }
@@ -344,6 +520,7 @@ function clearSelectedPod() {
         clearInterval(state.logsRefreshTimer);
         state.logsRefreshTimer = null;
     }
+
     els.selectedMeta.textContent = "Select a pod to display logs";
     els.containerSelect.innerHTML = `<option value="">All Containers</option>`;
     state.rawLogs = "";
@@ -354,6 +531,7 @@ function clearSelectedPod() {
     els.logsView.textContent = "";
     updateLogMatchCounter();
     updatePreviousPodLogsButton();
+
     updateActiveLogTab({
         pod: null,
         selectedContainer: "",
@@ -372,6 +550,7 @@ async function loadLogs() {
 
     state.logsLoading = true;
     els.logsView.textContent = "Loading logs...";
+
     try {
         resetLogTailLimit();
         const logs = await fetchCurrentLogs();
@@ -388,6 +567,7 @@ async function refreshLogsSilently() {
     }
 
     state.logsLoading = true;
+
     try {
         const logs = await fetchCurrentLogs();
         renderLogs(logs);
@@ -402,9 +582,11 @@ async function refreshLogsSilently() {
 async function fetchCurrentLogs() {
     const tailLines = state.currentTailLines || Number(els.tailInput.value || 300);
     const params = new URLSearchParams();
+
     if (state.selectedContainer) {
         params.set("container", state.selectedContainer);
     }
+
     params.set("tailLines", String(Math.max(1, tailLines)));
 
     const pod = state.selectedPod;
@@ -419,8 +601,10 @@ async function loadOlderLogs() {
 
     const previousTail = state.currentTailLines;
     const nextTail = Math.min(state.maxTailLines, previousTail + state.logTailStep);
+
     if (nextTail <= previousTail) {
         state.logsExhausted = true;
+        saveLogTabsState();
         return;
     }
 
@@ -432,12 +616,16 @@ async function loadOlderLogs() {
     try {
         state.currentTailLines = nextTail;
         const logs = await fetchCurrentLogs();
+
         if (logs === state.rawLogs) {
             state.logsExhausted = true;
+            saveLogTabsState();
             setStatus("ok", "Ready");
             return;
         }
+
         renderLogs(logs, { keepViewportAfterPrepend: true, previousScrollHeight, previousScrollTop });
+        saveLogTabsState();
         setStatus("ok", "Ready");
     } catch (error) {
         state.currentTailLines = previousTail;
@@ -451,6 +639,7 @@ async function loadOlderLogs() {
 function renderLogs(logs, options = {}) {
     const wasNearBottom = isLogsNearBottom();
     const nextText = logs || "No logs returned";
+
     if (state.rawLogs === nextText && state.logMatches.length === countLogMatches(nextText, els.logSearchInput.value.trim())) {
         return;
     }
@@ -466,7 +655,9 @@ function renderLogs(logs, options = {}) {
     } else if (wasNearBottom) {
         els.logsView.scrollTop = els.logsView.scrollHeight;
     }
+
     saveActiveLogTab();
+    saveLogTabsState();
 }
 
 function resetLogTailLimit() {
@@ -497,14 +688,17 @@ function renderHighlightedLogs() {
 
     while (true) {
         const found = lowerText.indexOf(lowerQuery, cursor);
+
         if (found === -1) {
             html += escapeHtml(displayLogs.slice(cursor));
             break;
         }
 
         html += renderLogSegment(displayLogs.slice(cursor, found));
+
         const currentClass = matchIndex === state.activeLogMatchIndex ? " current" : "";
         html += `<mark class="log-hit${currentClass}" data-match-index="${matchIndex}">${escapeHtml(displayLogs.slice(found, found + query.length))}</mark>`;
+
         state.logMatches.push({ start: found, end: found + query.length });
         cursor = found + query.length;
         matchIndex += 1;
@@ -533,6 +727,7 @@ function renderLogSegment(segment) {
 
 function captureLogsSelection() {
     const selection = window.getSelection();
+
     if (!selection || selection.rangeCount === 0 || !els.logsView.contains(selection.anchorNode) || !els.logsView.contains(selection.focusNode)) {
         return null;
     }
@@ -602,6 +797,7 @@ function updateLogSearch(direction = 0) {
     }
 
     const total = countLogMatches(currentDisplayedLogs(), els.logSearchInput.value.trim());
+
     if (total === 0) {
         state.activeLogMatchIndex = -1;
     } else if (direction !== 0) {
@@ -609,6 +805,7 @@ function updateLogSearch(direction = 0) {
     } else {
         state.activeLogMatchIndex = 0;
     }
+
     renderHighlightedLogs();
 }
 
@@ -616,15 +813,19 @@ function countLogMatches(text, query) {
     if (!query) {
         return 0;
     }
+
     let count = 0;
     let cursor = 0;
     const lowerText = text.toLowerCase();
     const lowerQuery = query.toLowerCase();
+
     while (true) {
         const found = lowerText.indexOf(lowerQuery, cursor);
+
         if (found === -1) {
             return count;
         }
+
         count += 1;
         cursor = found + lowerQuery.length;
     }
@@ -634,21 +835,25 @@ function currentDisplayedLogs() {
     if (!state.compactJsonLogs) {
         return state.rawLogs;
     }
+
     return compactJsonLogLines(state.rawLogs);
 }
 
 function compactJsonLogLines(logs) {
     return logs.split("\n").map(line => {
         const trimmed = line.trim();
+
         if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
             return line;
         }
 
         try {
             const entry = JSON.parse(trimmed);
+
             if (!Object.prototype.hasOwnProperty.call(entry, "timestamp") || !Object.prototype.hasOwnProperty.call(entry, "message")) {
                 return line;
             }
+
             return `${entry.timestamp} ${entry.level || ""} ${entry.message}`.trim();
         } catch {
             return compactJsonLineByPattern(line);
@@ -660,20 +865,25 @@ function compactJsonLineByPattern(line) {
     const timestampMatch = line.match(/"timestamp"\s*:\s*"([^"]*)"/);
     const levelMatch = line.match(/"level"\s*:\s*"(TRACE|DEBUG|INFO|WARN|ERROR)"/i);
     const messageMatch = line.match(/"message"\s*:\s*("(?:\\.|[^"\\])*")/);
+
     if (!timestampMatch || !messageMatch) {
         return line;
     }
+
     let message = messageMatch[1];
+
     try {
         message = JSON.parse(messageMatch[1]);
     } catch {
         message = messageMatch[1].slice(1, -1);
     }
+
     return `${timestampMatch[1]} ${levelMatch ? levelMatch[1].toUpperCase() : ""} ${message}`.trim();
 }
 
 function colorizeLevelsOnly(logs, wrapLines = true) {
     const lines = logs.split("\n");
+
     return lines.map(line => {
         const content = colorizeLevelInLine(line);
         return wrapLines ? `<span class="log-line">${content}</span>` : content;
@@ -683,6 +893,7 @@ function colorizeLevelsOnly(logs, wrapLines = true) {
 function colorizeLevelInLine(line) {
     const escaped = escapeHtml(line);
     const jsonLevelPattern = /(&quot;level&quot;\s*:\s*&quot;)(TRACE|DEBUG|INFO|WARN|ERROR)(&quot;)/i;
+
     if (jsonLevelPattern.test(escaped)) {
         return escaped.replace(jsonLevelPattern, (_, prefix, level, suffix) =>
             `${prefix}<span class="${levelClass(level)}">${level}</span>${suffix}`);
@@ -699,9 +910,11 @@ function colorizeLogLine(line, wrapLine) {
 
 function colorizeLogLineContent(line) {
     const trimmed = line.trim();
+
     if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
         return colorizeJsonLogLine(line);
     }
+
     return colorizePlainLogLine(line);
 }
 
@@ -712,6 +925,7 @@ function colorizeJsonLogLine(line) {
 
     try {
         const entry = JSON.parse(line.trim());
+
         if (entry && typeof entry === "object") {
             const timestamp = entry.timestamp ? `<span class="log-ts">${escapeHtml(entry.timestamp)}</span>` : "";
             const level = entry.level ? `<span class="${levelClass(entry.level)}">${escapeHtml(entry.level)}</span>` : "";
@@ -734,6 +948,7 @@ function colorizeRawJsonLine(line) {
 
 function colorizePlainLogLine(line) {
     const escaped = escapeHtml(line);
+
     return escaped
         .replace(/^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/, '<span class="log-ts">$1</span>')
         .replace(/\b(TRACE|DEBUG|INFO|WARN|ERROR)\b/g, level => `<span class="${levelClass(level)}">${level}</span>`)
@@ -744,6 +959,7 @@ function colorizePlainLogLine(line) {
 
 function detectLogLevel(line) {
     const trimmed = line.trim();
+
     if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
         try {
             const entry = JSON.parse(trimmed);
@@ -753,6 +969,7 @@ function detectLogLevel(line) {
             return match ? normalizeLogLevel(match[1]) : null;
         }
     }
+
     const match = line.match(/\b(TRACE|DEBUG|INFO|WARN|ERROR)\b/i);
     return match ? normalizeLogLevel(match[1]) : null;
 }
@@ -769,6 +986,7 @@ function levelClass(level) {
 function updateLogMatchCounter() {
     const total = state.logMatches.length;
     const current = total === 0 ? 0 : state.activeLogMatchIndex + 1;
+
     els.logMatchCounter.textContent = `${current} / ${total}`;
     els.prevLogMatchButton.disabled = total === 0;
     els.nextLogMatchButton.disabled = total === 0;
@@ -781,6 +999,7 @@ function updatePreviousPodLogsButton() {
 
     const active = Boolean(state.previousPodLogsOrigin);
     const index = selectedPodIndex();
+
     els.previousPodLogsButton.disabled = !active && index <= 0;
     els.previousPodLogsButton.classList.toggle("active", active);
     els.previousPodLogsButton.textContent = active ? "Current pod" : "Prev pod";
@@ -804,10 +1023,12 @@ async function selectPreviousPodLogs() {
         state.previousPodLogsOrigin = null;
         updateActiveLogTab({ previousPodLogsOrigin: null });
         await selectPod(origin.namespace, origin.name);
+        saveLogTabsState();
         return;
     }
 
     const index = selectedPodIndex();
+
     if (index <= 0) {
         updatePreviousPodLogsButton();
         return;
@@ -817,16 +1038,21 @@ async function selectPreviousPodLogs() {
         namespace: state.selectedPod.namespace,
         name: state.selectedPod.name
     };
+
     updateActiveLogTab({ previousPodLogsOrigin: state.previousPodLogsOrigin });
+
     const previousPod = state.filteredPods[index - 1];
     await selectPod(previousPod.namespace, previousPod.name, { keepPreviousPodOrigin: true });
+    saveLogTabsState();
 }
 
 function scrollToActiveLogMatch() {
     if (state.activeLogMatchIndex < 0) {
         return;
     }
+
     const current = els.logsView.querySelector(`mark[data-match-index="${state.activeLogMatchIndex}"]`);
+
     if (current) {
         current.scrollIntoView({ block: "center", inline: "nearest" });
     }
@@ -834,9 +1060,11 @@ function scrollToActiveLogMatch() {
 
 function containerBlocks(pod) {
     const containers = pod.containers || [];
+
     if (containers.length === 0) {
         return "";
     }
+
     return `<span class="container-blocks">${containers.map(container =>
         `<span class="container-block ${container.ready ? "ready" : ""}" title="${escapeHtml(container.name)}"></span>`
     ).join("")}</span>`;
@@ -845,15 +1073,19 @@ function containerBlocks(pod) {
 function statusClass(pod) {
     const unhealthy = (pod.containers || []).some(container => !container.ready);
     const phase = String(pod.phase || "").toLowerCase();
+
     if (phase === "failed" || phase === "unknown") {
         return "status-bad";
     }
+
     if (phase === "pending") {
         return "status-warning";
     }
+
     if (phase === "succeeded") {
         return "status-running";
     }
+
     return unhealthy ? "status-warning" : "status-running";
 }
 
@@ -861,15 +1093,18 @@ function formatAge(age) {
     if (!age) {
         return "";
     }
+
     return age.replace("h", "h").replace("d", "d");
 }
 
 function renderConfigLabels() {
     const name = state.activeConfig || "DEV";
+
     els.pageTitle.textContent = `Pods - ${name}`;
     els.navigatorClusterName.textContent = name;
     els.activeConfigBadge.textContent = shortConfigName(name);
     els.statusCluster.textContent = `⬢ ${name} (v1.22.12)`;
+
     els.clusterTiles.forEach(tile => {
         tile.classList.toggle("active", tile.dataset.config === name);
     });
@@ -882,12 +1117,15 @@ function shortConfigName(name) {
 
 function setStatus(kind, text) {
     els.clusterStatus.className = "status-dot";
+
     if (kind === "ok") {
         els.clusterStatus.classList.add("ok");
     }
+
     if (kind === "error") {
         els.clusterStatus.classList.add("error");
     }
+
     els.clusterText.textContent = text;
 }
 
@@ -908,18 +1146,22 @@ els.kubeConfigSelect.addEventListener("change", () => {
     if (!els.kubeConfigSelect.value) {
         return;
     }
+
     activateKubeConfig(els.kubeConfigSelect.value).catch(handleError);
 });
 
 els.clusterTiles.forEach(tile => {
     tile.addEventListener("click", () => {
         const config = tile.dataset.config;
+
         if (!config || config === state.activeConfig) {
             return;
         }
+
         if (Array.from(els.kubeConfigSelect.options).some(option => option.value === config)) {
             els.kubeConfigSelect.value = config;
         }
+
         activateKubeConfig(config).catch(handleError);
     });
 });
@@ -939,6 +1181,7 @@ els.logSearchInput.addEventListener("keydown", event => {
     if (event.key !== "Enter") {
         return;
     }
+
     event.preventDefault();
     updateLogSearch(event.shiftKey ? -1 : 1);
 });
@@ -950,10 +1193,13 @@ els.podsBody.addEventListener("click", event => {
     if (event.target.matches("input[type='checkbox']")) {
         return;
     }
+
     const row = event.target.closest("tr[data-namespace][data-name]");
+
     if (!row) {
         return;
     }
+
     selectPod(row.dataset.namespace, row.dataset.name).catch(handleError);
 });
 
@@ -966,6 +1212,7 @@ if (els.addLogTabButton) {
 if (els.logsTabs) {
     els.logsTabs.addEventListener("click", event => {
         const closeButton = event.target.closest("[data-close-tab-id]");
+
         if (closeButton) {
             event.stopPropagation();
             closeLogTab(closeButton.dataset.closeTabId);
@@ -973,6 +1220,7 @@ if (els.logsTabs) {
         }
 
         const tabButton = event.target.closest("[data-tab-id]");
+
         if (tabButton) {
             switchLogTab(tabButton.dataset.tabId);
         }
@@ -986,12 +1234,16 @@ els.containerSelect.addEventListener("change", () => {
 });
 
 els.tailInput.addEventListener("change", () => {
+    saveUiState({ tailLines: els.tailInput.value });
+
     resetLogTailLimit();
+
     updateActiveLogTab({
         currentTailLines: state.currentTailLines,
         logTailStep: state.logTailStep,
         logsExhausted: state.logsExhausted
     });
+
     loadLogs().catch(handleError);
 });
 
@@ -1004,6 +1256,7 @@ if (els.previousPodLogsButton) {
 els.compactJsonButton.addEventListener("click", () => {
     state.compactJsonLogs = !state.compactJsonLogs;
     els.compactJsonButton.classList.toggle("active", state.compactJsonLogs);
+    saveUiState({ compactJsonLogs: state.compactJsonLogs });
     renderHighlightedLogs();
 });
 
@@ -1017,10 +1270,14 @@ els.autoRefreshButton.addEventListener("click", () => {
     state.logsAutoRefresh = !state.logsAutoRefresh;
     els.autoRefreshButton.classList.toggle("active", state.logsAutoRefresh);
     els.autoRefreshButton.textContent = state.logsAutoRefresh ? "Live" : "Paused";
+    saveUiState({ logsAutoRefresh: state.logsAutoRefresh });
     restartLogsAutoRefresh();
 });
 
-els.logRefreshInterval.addEventListener("change", restartLogsAutoRefresh);
+els.logRefreshInterval.addEventListener("change", () => {
+    saveUiState({ logRefreshInterval: els.logRefreshInterval.value });
+    restartLogsAutoRefresh();
+});
 
 els.expandLogsButton.addEventListener("click", () => {
     setLogsExpanded(!els.lens.classList.contains("logs-expanded"));
@@ -1049,19 +1306,23 @@ function restartLogsAutoRefresh() {
         clearInterval(state.logsRefreshTimer);
         state.logsRefreshTimer = null;
     }
+
     if (!state.logsAutoRefresh || !state.selectedPod) {
         return;
     }
+
     state.logsRefreshTimer = setInterval(refreshLogsSilently, Number(els.logRefreshInterval.value || 5000));
 }
 
 function initLogsResizer() {
     const handle = document.querySelector("#logsResizeHandle");
+
     if (!handle || !els.lens) {
         return;
     }
 
     const savedHeight = Number(localStorage.getItem("logsPanelHeight"));
+
     if (savedHeight) {
         setLogsHeight(savedHeight);
     }
@@ -1071,9 +1332,12 @@ function initLogsResizer() {
 
     handle.addEventListener("mousedown", event => {
         event.preventDefault();
+
         startY = event.clientY;
         startHeight = currentLogsHeight();
+
         els.lens.classList.add("resizing-logs");
+
         document.addEventListener("mousemove", resizeLogs);
         document.addEventListener("mouseup", stopResizeLogs);
     });
@@ -1085,8 +1349,10 @@ function initLogsResizer() {
 
     function stopResizeLogs() {
         els.lens.classList.remove("resizing-logs");
+
         document.removeEventListener("mousemove", resizeLogs);
         document.removeEventListener("mouseup", stopResizeLogs);
+
         localStorage.setItem("logsPanelHeight", String(currentLogsHeight()));
     }
 }
@@ -1101,17 +1367,25 @@ function setLogsHeight(height) {
     const min = 160;
     const max = Math.max(220, viewportHeight - 180);
     const clamped = Math.min(max, Math.max(min, Math.round(height)));
+
     els.lens.style.setProperty("--logs-height", `${clamped}px`);
 }
 
 function setLogsExpanded(expanded) {
     const wasNearBottom = isLogsNearBottom();
+
     if (expanded) {
-        setLogsCollapsed(false);
+        els.lens.classList.remove("logs-collapsed");
+        els.collapseLogsButton.textContent = "˅";
+        els.collapseLogsButton.title = "Collapse logs";
+        saveUiState({ logsCollapsed: false });
     }
+
     els.lens.classList.toggle("logs-expanded", expanded);
     els.expandLogsButton.textContent = expanded ? "🗗" : "⛶";
     els.expandLogsButton.title = expanded ? "Restore logs panel" : "Expand logs";
+
+    saveUiState({ logsExpanded: expanded });
 
     requestAnimationFrame(() => {
         if (wasNearBottom) {
@@ -1122,15 +1396,23 @@ function setLogsExpanded(expanded) {
 
 function setLogsCollapsed(collapsed) {
     if (collapsed) {
-        setLogsExpanded(false);
+        els.lens.classList.remove("logs-expanded");
+        els.expandLogsButton.textContent = "⛶";
+        els.expandLogsButton.title = "Expand logs";
+        saveUiState({ logsExpanded: false });
     }
+
     els.lens.classList.toggle("logs-collapsed", collapsed);
     els.collapseLogsButton.textContent = collapsed ? "˄" : "˅";
     els.collapseLogsButton.title = collapsed ? "Restore logs panel" : "Collapse logs";
+
+    saveUiState({ logsCollapsed: collapsed });
 }
 
-createLogTab({ silent: true });
+restoreUiState();
+
 loadKubeConfigs()
     .then(loadNamespaces)
     .then(loadPods)
+    .then(restoreSavedLogTabs)
     .catch(handleError);
