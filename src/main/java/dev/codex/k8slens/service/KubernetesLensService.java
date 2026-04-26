@@ -3,10 +3,12 @@ package dev.codex.k8slens.service;
 import dev.codex.k8slens.config.KubernetesLensProperties;
 import dev.codex.k8slens.model.ContainerSummary;
 import dev.codex.k8slens.model.PodDetails;
+import dev.codex.k8slens.model.PodPortSummary;
 import dev.codex.k8slens.model.PodSummary;
 import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.openapi.models.V1Container;
+import io.kubernetes.client.openapi.models.V1ContainerPort;
 import io.kubernetes.client.openapi.models.V1ContainerState;
 import io.kubernetes.client.openapi.models.V1ContainerStatus;
 import io.kubernetes.client.openapi.models.V1Namespace;
@@ -163,7 +165,31 @@ public class KubernetesLensService {
                 summary,
                 nullToEmpty(pod.getMetadata() == null ? null : pod.getMetadata().getLabels()),
                 nullToEmpty(pod.getMetadata() == null ? null : pod.getMetadata().getAnnotations()),
-                conditions);
+                conditions,
+                pod.getMetadata() == null || pod.getMetadata().getCreationTimestamp() == null
+                        ? ""
+                        : pod.getMetadata().getCreationTimestamp().toString(),
+                pod.getSpec() == null ? "" : nullToBlank(pod.getSpec().getServiceAccountName()),
+                ports(pod));
+    }
+
+    private List<PodPortSummary> ports(V1Pod pod) {
+        return Optional.ofNullable(pod.getSpec())
+                .map(V1PodSpec::getContainers)
+                .orElse(Collections.emptyList())
+                .stream()
+                .flatMap(container -> Optional.ofNullable(container.getPorts()).orElse(Collections.emptyList()).stream()
+                        .filter(port -> port.getContainerPort() != null)
+                        .map(port -> toPortSummary(container.getName(), port)))
+                .collect(Collectors.toList());
+    }
+
+    private PodPortSummary toPortSummary(String containerName, V1ContainerPort port) {
+        return new PodPortSummary(
+                nullToBlank(port.getName()),
+                nullToBlank(containerName),
+                port.getContainerPort(),
+                nullToBlank(port.getProtocol()));
     }
 
     private PodSummary toSummary(V1Pod pod) {

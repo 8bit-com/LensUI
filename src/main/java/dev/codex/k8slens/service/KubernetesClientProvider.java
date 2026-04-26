@@ -83,6 +83,10 @@ public class KubernetesClientProvider {
         }
     }
 
+    public synchronized Optional<Path> activeKubeConfigFile() {
+        return Optional.ofNullable(activeKubeConfigPath());
+    }
+
     private ApiClient createClient() throws IOException {
         Path selectedPath = activeKubeConfigPath();
         if (selectedPath != null) {

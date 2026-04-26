@@ -3,6 +3,7 @@ const state = {
     namespaces: [],
     pods: [],
     filteredPods: [],
+    detailsPod: null,
     selectedPod: null,
     selectedContainer: "",
     activeConfig: "DEV",
@@ -32,6 +33,12 @@ const els = {
     logSearchInput: document.querySelector("#logSearchInput"),
     refreshButton: document.querySelector("#refreshButton"),
     podsBody: document.querySelector("#podsBody"),
+    podDetailsPanel: document.querySelector("#podDetailsPanel"),
+    detailsTitle: document.querySelector("#detailsTitle"),
+    detailsProperties: document.querySelector("#detailsProperties"),
+    detailsContainers: document.querySelector("#detailsContainers"),
+    openLogsButton: document.querySelector("#openLogsButton"),
+    closeDetailsButton: document.querySelector("#closeDetailsButton"),
     emptyPods: document.querySelector("#emptyPods"),
     podCount: document.querySelector("#podCount"),
     clusterStatus: document.querySelector("#clusterStatus"),
@@ -295,9 +302,9 @@ function renderPods() {
     els.podCount.textContent = `${state.filteredPods.length} item${state.filteredPods.length === 1 ? "" : "s"}`;
     els.emptyPods.classList.toggle("hidden", state.filteredPods.length > 0);
     els.podsBody.innerHTML = state.filteredPods.map(pod => {
-        const selected = state.selectedPod &&
-            state.selectedPod.namespace === pod.namespace &&
-            state.selectedPod.name === pod.name;
+        const selected = state.detailsPod &&
+            state.detailsPod.namespace === pod.namespace &&
+            state.detailsPod.name === pod.name;
         return `<tr class="${selected ? "selected" : ""}" data-namespace="${escapeHtml(pod.namespace)}" data-name="${escapeHtml(pod.name)}">
             <td class="check-col"><input type="checkbox"></td>
             <td title="${escapeHtml(pod.name)}">${escapeHtml(pod.name)}</td>
@@ -477,10 +484,127 @@ function closeLogTab(tabId) {
 }
 
 function resetLogTabs() {
+    closePodDetails();
     state.logTabs = [];
     state.activeLogTabId = "";
     createLogTab({ silent: true });
     saveLogTabsState();
+}
+
+async function showPodDetails(namespace, name) {
+    setStatus("loading", "Loading pod details");
+    const response = await api(`/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+    state.detailsPod = await response.json();
+    renderPodDetails();
+    renderPods();
+    setStatus("ok", "Ready");
+}
+
+function renderPodDetails() {
+    const pod = state.detailsPod;
+    if (!pod || !els.podDetailsPanel) {
+        closePodDetails();
+        return;
+    }
+
+    els.lens.classList.add("details-open");
+    els.podDetailsPanel.classList.remove("hidden");
+    els.detailsTitle.textContent = `Pod: ${pod.name}`;
+    els.detailsProperties.innerHTML = [
+        detailRow("Created", pod.createdAt || pod.age),
+        detailRow("Name", pod.name),
+        detailRow("Namespace", pod.namespace),
+        detailRow("Labels", `${Object.keys(pod.labels || {}).length} Labels`),
+        detailRow("Annotations", `${Object.keys(pod.annotations || {}).length} Annotations`),
+        detailRow("Status", pod.phase, statusClass(pod)),
+        detailRow("Node", pod.nodeName),
+        detailRow("Pod IP", pod.podIp),
+        detailRow("Service Account", pod.serviceAccount || "default"),
+        detailRow("Ready", pod.ready),
+        detailRow("Restarts", pod.restarts)
+    ].join("");
+
+    els.detailsContainers.innerHTML = (pod.containers || []).map(container => {
+        const ports = (pod.ports || [])
+            .filter(port => port.containerName === container.name)
+            .map(port => portRow(pod, port))
+            .join("") || `<span class="details-muted">No ports</span>`;
+        return `<div class="container-detail">
+            <div class="container-detail-name">${escapeHtml(container.name)}</div>
+            ${detailRow("Status", container.state, container.ready ? "status-running" : "status-warning")}
+            ${detailRow("Image", container.image)}
+            ${detailRow("Restarts", container.restartCount)}
+            <div class="details-row"><span>Ports</span><span>${ports}</span></div>
+        </div>`;
+    }).join("");
+}
+
+function closePodDetails() {
+    state.detailsPod = null;
+    els.lens.classList.remove("details-open");
+    if (els.podDetailsPanel) {
+        els.podDetailsPanel.classList.add("hidden");
+    }
+    renderPods();
+}
+
+function detailRow(label, value, valueClass = "") {
+    return `<div class="details-row">
+        <span>${escapeHtml(label)}</span>
+        <span class="${escapeHtml(valueClass)}">${escapeHtml(value ?? "")}</span>
+    </div>`;
+}
+
+function portRow(pod, port) {
+    const label = `${port.name ? `${port.name} ` : ""}${port.containerPort}/${port.protocol || "TCP"}`;
+    return `<button class="port-forward-link" type="button" data-namespace="${escapeHtml(pod.namespace)}" data-pod="${escapeHtml(pod.name)}" data-port="${escapeHtml(port.containerPort)}">
+        ${escapeHtml(label)}
+    </button>
+    <button class="port-forward-button" type="button" data-namespace="${escapeHtml(pod.namespace)}" data-pod="${escapeHtml(pod.name)}" data-port="${escapeHtml(port.containerPort)}">
+        Forward...
+    </button>`;
+}
+
+async function openDetailsLogs() {
+    if (!state.detailsPod) {
+        return;
+    }
+
+    const existing = state.logTabs.find(tab => tab.pod &&
+        tab.pod.namespace === state.detailsPod.namespace &&
+        tab.pod.name === state.detailsPod.name);
+    if (existing) {
+        switchLogTab(existing.id);
+    } else {
+        const current = activeLogTab();
+        if (current && current.pod) {
+            createLogTab({ silent: true });
+        }
+        await selectPod(state.detailsPod.namespace, state.detailsPod.name);
+    }
+    setLogsCollapsed(false);
+}
+
+async function startPortForward(namespace, podName, remotePort) {
+    const localValue = window.prompt("Local port", String(remotePort));
+    if (localValue === null) {
+        return;
+    }
+    const localPort = Number(localValue || remotePort);
+    if (!Number.isInteger(localPort) || localPort < 1) {
+        setStatus("error", "Invalid local port");
+        return;
+    }
+
+    setStatus("loading", "Starting port forward");
+    const response = await api(`/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/port-forward`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remotePort: Number(remotePort), localPort })
+    });
+    const session = await response.json();
+    setStatus("ok", `Forward ${session.localPort}:${session.remotePort}`);
+    window.open(session.url, "_blank", "noopener");
 }
 
 async function selectPod(namespace, name, options = {}) {
@@ -1245,8 +1369,28 @@ els.podsBody.addEventListener("click", event => {
         return;
     }
 
-    selectPod(row.dataset.namespace, row.dataset.name).catch(handleError);
+    showPodDetails(row.dataset.namespace, row.dataset.name).catch(handleError);
 });
+
+if (els.openLogsButton) {
+    els.openLogsButton.addEventListener("click", () => {
+        openDetailsLogs().catch(handleError);
+    });
+}
+
+if (els.closeDetailsButton) {
+    els.closeDetailsButton.addEventListener("click", closePodDetails);
+}
+
+if (els.podDetailsPanel) {
+    els.podDetailsPanel.addEventListener("click", event => {
+        const button = event.target.closest("[data-port][data-namespace][data-pod]");
+        if (!button) {
+            return;
+        }
+        startPortForward(button.dataset.namespace, button.dataset.pod, button.dataset.port).catch(handleError);
+    });
+}
 
 if (els.addLogTabButton) {
     els.addLogTabButton.addEventListener("click", () => {
