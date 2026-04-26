@@ -59,7 +59,8 @@ public class ClusterController {
             @PathVariable String namespace,
             @PathVariable String name,
             @RequestParam(required = false) String container,
-            @RequestParam(required = false) @Min(1) Integer tailLines) {
-        return service.readLogs(namespace, name, container, tailLines);
+            @RequestParam(required = false) @Min(1) Integer tailLines,
+            @RequestParam(defaultValue = "false") boolean previous) {
+        return service.readLogs(namespace, name, container, tailLines, previous);
     }
 }

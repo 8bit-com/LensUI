@@ -435,6 +435,7 @@ function switchLogTab(tabId) {
 function closeLogTab(tabId) {
     if (state.logTabs.length <= 1) {
         const tab = activeLogTab();
+
         if (tab) {
             Object.assign(tab, {
                 pod: null,
@@ -445,14 +446,18 @@ function closeLogTab(tabId) {
                 logsExhausted: false,
                 previousPodLogsOrigin: null
             });
+
             restoreLogTab(tab);
             renderLogTabs();
             saveLogTabsState();
         }
+
+        setLogsCollapsed(true);
         return;
     }
 
     const index = state.logTabs.findIndex(tab => tab.id === tabId);
+
     if (index === -1) {
         return;
     }
@@ -579,7 +584,7 @@ async function refreshLogsSilently() {
     }
 }
 
-async function fetchCurrentLogs() {
+async function fetchCurrentLogs(options = {}) {
     const tailLines = state.currentTailLines || Number(els.tailInput.value || 300);
     const params = new URLSearchParams();
 
@@ -588,6 +593,10 @@ async function fetchCurrentLogs() {
     }
 
     params.set("tailLines", String(Math.max(1, tailLines)));
+
+    if (options.previous || state.previousPodLogsOrigin?.previous) {
+        params.set("previous", "true");
+    }
 
     const pod = state.selectedPod;
     const response = await api(`/api/pods/${encodeURIComponent(pod.namespace)}/${encodeURIComponent(pod.name)}/logs?${params}`);
@@ -998,12 +1007,13 @@ function updatePreviousPodLogsButton() {
     }
 
     const active = Boolean(state.previousPodLogsOrigin);
-    const index = selectedPodIndex();
 
-    els.previousPodLogsButton.disabled = !active && index <= 0;
+    els.previousPodLogsButton.disabled = !state.selectedPod;
     els.previousPodLogsButton.classList.toggle("active", active);
     els.previousPodLogsButton.textContent = active ? "Current pod" : "Prev pod";
-    els.previousPodLogsButton.title = active ? "Return to current pod logs" : "Load logs from previous pod";
+    els.previousPodLogsButton.title = active
+        ? "Return to current pod logs"
+        : "Load previous container logs";
 }
 
 function selectedPodIndex() {
@@ -1018,32 +1028,67 @@ function selectedPodIndex() {
 }
 
 async function selectPreviousPodLogs() {
-    if (state.previousPodLogsOrigin) {
-        const origin = state.previousPodLogsOrigin;
-        state.previousPodLogsOrigin = null;
-        updateActiveLogTab({ previousPodLogsOrigin: null });
-        await selectPod(origin.namespace, origin.name);
+    if (!state.selectedPod || state.logsLoading) {
+        return;
+    }
+
+    state.logsLoading = true;
+
+    try {
+        if (state.previousPodLogsOrigin) {
+            state.previousPodLogsOrigin = null;
+
+            const logs = await fetchCurrentLogs();
+            renderLogs(logs);
+
+            updateActiveLogTab({
+                previousPodLogsOrigin: null
+            });
+
+            saveLogTabsState();
+            return;
+        }
+
+        state.previousPodLogsOrigin = {
+            namespace: state.selectedPod.namespace,
+            name: state.selectedPod.name,
+            previous: true
+        };
+
+        const logs = await fetchCurrentLogs({ previous: true });
+        renderLogs(logs);
+
+        updateActiveLogTab({
+            previousPodLogsOrigin: state.previousPodLogsOrigin
+        });
+
         saveLogTabsState();
-        return;
-    }
+    } catch (error) {
+        const message = String(error.message || "");
 
-    const index = selectedPodIndex();
+        if (
+            message.includes("previous terminated container") &&
+            message.includes("not found")
+        ) {
+            state.previousPodLogsOrigin = null;
+            els.logsView.textContent = "Под не перезагружался";
+            setStatus("ok", "Ready");
 
-    if (index <= 0) {
+            updateActiveLogTab({
+                previousPodLogsOrigin: null
+            });
+
+            saveLogTabsState();
+            return;
+        }
+
+        setStatus("error", "Previous logs error");
+        els.logsView.textContent = message;
+        console.error(error);
+    } finally {
+        state.logsLoading = false;
         updatePreviousPodLogsButton();
-        return;
     }
-
-    state.previousPodLogsOrigin = {
-        namespace: state.selectedPod.namespace,
-        name: state.selectedPod.name
-    };
-
-    updateActiveLogTab({ previousPodLogsOrigin: state.previousPodLogsOrigin });
-
-    const previousPod = state.filteredPods[index - 1];
-    await selectPod(previousPod.namespace, previousPod.name, { keepPreviousPodOrigin: true });
-    saveLogTabsState();
 }
 
 function scrollToActiveLogMatch() {

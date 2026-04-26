@@ -118,8 +118,9 @@ public class KubernetesLensService {
         }
     }
 
-    public String readLogs(String namespace, String name, String container, Integer tailLines) {
+    public String readLogs(String namespace, String name, String container, Integer tailLines, boolean previous) {
         Integer effectiveTailLines = tailLines != null ? tailLines : properties.getLogs().getDefaultTailLines();
+
         try {
             return api().readNamespacedPodLog(
                     name,
@@ -129,7 +130,7 @@ public class KubernetesLensService {
                     null,
                     null,
                     null,
-                    null,
+                    previous,
                     null,
                     effectiveTailLines,
                     null);
