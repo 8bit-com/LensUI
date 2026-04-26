@@ -17,7 +17,10 @@ const state = {
     maxTailLines: 5000,
     logsExhausted: false,
     compactJsonLogs: false,
-    previousPodLogsOrigin: null
+    previousPodLogsOrigin: null,
+    logTabs: [],
+    activeLogTabId: "",
+    nextLogTabId: 1
 };
 
 const els = {
@@ -33,7 +36,8 @@ const els = {
     podCount: document.querySelector("#podCount"),
     clusterStatus: document.querySelector("#clusterStatus"),
     clusterText: document.querySelector("#clusterText"),
-    selectedName: document.querySelector("#selectedName"),
+    logsTabs: document.querySelector("#logsTabs"),
+    addLogTabButton: document.querySelector("#addLogTabButton"),
     selectedMeta: document.querySelector("#selectedMeta"),
     containerSelect: document.querySelector("#containerSelect"),
     tailInput: document.querySelector("#tailInput"),
@@ -97,9 +101,7 @@ async function activateKubeConfig(name) {
     state.kubeConfigs = await response.json();
     const active = state.kubeConfigs.find(config => config.active);
     state.activeConfig = active ? active.name : name;
-    state.selectedPod = null;
-    state.selectedContainer = "";
-    clearSelectedPod();
+    resetLogTabs();
     renderConfigLabels();
     await loadNamespaces();
     await loadPods();
@@ -160,6 +162,150 @@ function renderPods() {
     updatePreviousPodLogsButton();
 }
 
+function createLogTab(options = {}) {
+    saveActiveLogTab();
+    const tab = {
+        id: `logs-tab-${state.nextLogTabId++}`,
+        pod: null,
+        selectedContainer: "",
+        rawLogs: "",
+        logMatches: [],
+        activeLogMatchIndex: -1,
+        currentTailLines: Math.max(1, Number(els.tailInput.value || 300)),
+        logTailStep: Math.max(1, Number(els.tailInput.value || 300)),
+        logsExhausted: false,
+        previousPodLogsOrigin: null
+    };
+    state.logTabs.push(tab);
+    state.activeLogTabId = tab.id;
+    restoreLogTab(tab);
+    renderLogTabs();
+
+    if (!options.silent) {
+        setStatus("ok", "Select a pod");
+    }
+}
+
+function renderLogTabs() {
+    if (!els.logsTabs) {
+        return;
+    }
+
+    els.logsTabs.innerHTML = state.logTabs.map(tab => {
+        const active = tab.id === state.activeLogTabId;
+        const label = tab.pod ? `Pod ${tab.pod.name}` : "Select a pod";
+        return `<button class="logs-tab ${active ? "active" : ""}" type="button" data-tab-id="${escapeHtml(tab.id)}" title="${escapeHtml(label)}">
+            <span class="logs-tab-icon">≡</span>
+            <span>${escapeHtml(label)}</span>
+            <span class="logs-tab-close" data-close-tab-id="${escapeHtml(tab.id)}">×</span>
+        </button>`;
+    }).join("");
+}
+
+function activeLogTab() {
+    return state.logTabs.find(tab => tab.id === state.activeLogTabId) || null;
+}
+
+function saveActiveLogTab() {
+    const tab = activeLogTab();
+    if (!tab) {
+        return;
+    }
+
+    tab.pod = state.selectedPod;
+    tab.selectedContainer = state.selectedContainer;
+    tab.rawLogs = state.rawLogs;
+    tab.logMatches = state.logMatches.slice();
+    tab.activeLogMatchIndex = state.activeLogMatchIndex;
+    tab.currentTailLines = state.currentTailLines;
+    tab.logTailStep = state.logTailStep;
+    tab.logsExhausted = state.logsExhausted;
+    tab.previousPodLogsOrigin = state.previousPodLogsOrigin;
+}
+
+function restoreLogTab(tab) {
+    state.selectedPod = tab.pod;
+    state.selectedContainer = tab.selectedContainer || "";
+    state.rawLogs = tab.rawLogs || "";
+    state.logMatches = (tab.logMatches || []).slice();
+    state.activeLogMatchIndex = tab.activeLogMatchIndex ?? -1;
+    state.currentTailLines = tab.currentTailLines || Math.max(1, Number(els.tailInput.value || 300));
+    state.logTailStep = tab.logTailStep || state.currentTailLines;
+    state.logsExhausted = Boolean(tab.logsExhausted);
+    state.previousPodLogsOrigin = tab.previousPodLogsOrigin || null;
+
+    renderSelectedPod();
+    renderHighlightedLogs();
+    renderPods();
+    restartLogsAutoRefresh();
+}
+
+function updateActiveLogTab(updates = {}) {
+    const tab = activeLogTab();
+    if (!tab) {
+        return;
+    }
+    Object.assign(tab, updates);
+    saveActiveLogTab();
+    renderLogTabs();
+}
+
+function switchLogTab(tabId) {
+    if (tabId === state.activeLogTabId) {
+        return;
+    }
+
+    const tab = state.logTabs.find(item => item.id === tabId);
+    if (!tab) {
+        return;
+    }
+
+    saveActiveLogTab();
+    state.activeLogTabId = tab.id;
+    restoreLogTab(tab);
+}
+
+function closeLogTab(tabId) {
+    if (state.logTabs.length <= 1) {
+        const tab = activeLogTab();
+        if (tab) {
+            Object.assign(tab, {
+                pod: null,
+                selectedContainer: "",
+                rawLogs: "",
+                logMatches: [],
+                activeLogMatchIndex: -1,
+                logsExhausted: false,
+                previousPodLogsOrigin: null
+            });
+            restoreLogTab(tab);
+            renderLogTabs();
+        }
+        return;
+    }
+
+    const index = state.logTabs.findIndex(tab => tab.id === tabId);
+    if (index === -1) {
+        return;
+    }
+
+    const closingActive = tabId === state.activeLogTabId;
+    state.logTabs.splice(index, 1);
+    if (closingActive) {
+        const nextTab = state.logTabs[Math.min(index, state.logTabs.length - 1)];
+        state.activeLogTabId = nextTab.id;
+        restoreLogTab(nextTab);
+    } else {
+        renderLogTabs();
+    }
+}
+
+function resetLogTabs() {
+    state.logTabs = [];
+    state.activeLogTabId = "";
+    createLogTab({ silent: true });
+}
+
 async function selectPod(namespace, name, options = {}) {
     if (!options.keepPreviousPodOrigin) {
         state.previousPodLogsOrigin = null;
@@ -172,6 +318,7 @@ async function selectPod(namespace, name, options = {}) {
     renderSelectedPod();
     renderPods();
     await loadLogs();
+    updateActiveLogTab({ pod: state.selectedPod });
     setStatus("ok", "Ready");
 }
 
@@ -182,8 +329,6 @@ function renderSelectedPod() {
         return;
     }
 
-    els.selectedName.textContent = `Pod ${pod.name}`;
-    els.selectedName.title = pod.name;
     els.selectedMeta.innerHTML = `Displaying logs from Namespace: <span class="namespace-link">${escapeHtml(pod.namespace)}</span> for Pod: <span class="pod-link">${escapeHtml(pod.name)}</span>.`;
 
     const containerOptions = [`<option value="">All Containers</option>`].concat(
@@ -199,7 +344,6 @@ function clearSelectedPod() {
         clearInterval(state.logsRefreshTimer);
         state.logsRefreshTimer = null;
     }
-    els.selectedName.textContent = "Select a pod";
     els.selectedMeta.textContent = "Select a pod to display logs";
     els.containerSelect.innerHTML = `<option value="">All Containers</option>`;
     state.rawLogs = "";
@@ -210,6 +354,15 @@ function clearSelectedPod() {
     els.logsView.textContent = "";
     updateLogMatchCounter();
     updatePreviousPodLogsButton();
+    updateActiveLogTab({
+        pod: null,
+        selectedContainer: "",
+        rawLogs: "",
+        logMatches: [],
+        activeLogMatchIndex: -1,
+        logsExhausted: false,
+        previousPodLogsOrigin: null
+    });
 }
 
 async function loadLogs() {
@@ -313,6 +466,7 @@ function renderLogs(logs, options = {}) {
     } else if (wasNearBottom) {
         els.logsView.scrollTop = els.logsView.scrollHeight;
     }
+    saveActiveLogTab();
 }
 
 function resetLogTailLimit() {
@@ -331,6 +485,7 @@ function renderHighlightedLogs() {
         state.activeLogMatchIndex = -1;
         renderLogHtmlWithoutSearch(displayLogs);
         updateLogMatchCounter();
+        saveActiveLogTab();
         return;
     }
 
@@ -365,6 +520,7 @@ function renderHighlightedLogs() {
     els.logsView.innerHTML = html;
     updateLogMatchCounter();
     scrollToActiveLogMatch();
+    saveActiveLogTab();
 }
 
 function renderLogHtmlWithoutSearch(displayLogs) {
@@ -646,6 +802,7 @@ async function selectPreviousPodLogs() {
     if (state.previousPodLogsOrigin) {
         const origin = state.previousPodLogsOrigin;
         state.previousPodLogsOrigin = null;
+        updateActiveLogTab({ previousPodLogsOrigin: null });
         await selectPod(origin.namespace, origin.name);
         return;
     }
@@ -660,6 +817,7 @@ async function selectPreviousPodLogs() {
         namespace: state.selectedPod.namespace,
         name: state.selectedPod.name
     };
+    updateActiveLogTab({ previousPodLogsOrigin: state.previousPodLogsOrigin });
     const previousPod = state.filteredPods[index - 1];
     await selectPod(previousPod.namespace, previousPod.name, { keepPreviousPodOrigin: true });
 }
@@ -767,8 +925,7 @@ els.clusterTiles.forEach(tile => {
 });
 
 els.namespaceSelect.addEventListener("change", () => {
-    state.selectedPod = null;
-    clearSelectedPod();
+    resetLogTabs();
     loadPods().catch(handleError);
 });
 
@@ -800,13 +957,41 @@ els.podsBody.addEventListener("click", event => {
     selectPod(row.dataset.namespace, row.dataset.name).catch(handleError);
 });
 
+if (els.addLogTabButton) {
+    els.addLogTabButton.addEventListener("click", () => {
+        createLogTab();
+    });
+}
+
+if (els.logsTabs) {
+    els.logsTabs.addEventListener("click", event => {
+        const closeButton = event.target.closest("[data-close-tab-id]");
+        if (closeButton) {
+            event.stopPropagation();
+            closeLogTab(closeButton.dataset.closeTabId);
+            return;
+        }
+
+        const tabButton = event.target.closest("[data-tab-id]");
+        if (tabButton) {
+            switchLogTab(tabButton.dataset.tabId);
+        }
+    });
+}
+
 els.containerSelect.addEventListener("change", () => {
     state.selectedContainer = els.containerSelect.value;
+    updateActiveLogTab({ selectedContainer: state.selectedContainer });
     loadLogs().catch(handleError);
 });
 
 els.tailInput.addEventListener("change", () => {
     resetLogTailLimit();
+    updateActiveLogTab({
+        currentTailLines: state.currentTailLines,
+        logTailStep: state.logTailStep,
+        logsExhausted: state.logsExhausted
+    });
     loadLogs().catch(handleError);
 });
 
@@ -944,7 +1129,7 @@ function setLogsCollapsed(collapsed) {
     els.collapseLogsButton.title = collapsed ? "Restore logs panel" : "Collapse logs";
 }
 
-clearSelectedPod();
+createLogTab({ silent: true });
 loadKubeConfigs()
     .then(loadNamespaces)
     .then(loadPods)

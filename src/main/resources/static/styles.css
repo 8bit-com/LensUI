@@ -613,27 +613,56 @@ input:focus {
 
 .logs-tabbar {
     display: grid;
-    grid-template-columns: 390px 34px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 34px auto;
     align-items: stretch;
     border-bottom: 1px solid var(--line);
     background: #1b1f22;
+}
+
+.logs-tabs {
+    display: flex;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .logs-tab {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 260px;
+    min-width: 160px;
+    max-width: 320px;
     padding: 0 10px;
+    border: 0;
     border-right: 1px solid var(--line);
+    background: #171b1e;
     color: var(--text-strong);
     font-size: 12px;
     font-weight: 700;
+    cursor: pointer;
 }
 
-.logs-tab #selectedName {
+.logs-tab.active {
+    background: #202427;
+}
+
+.logs-tab span:not(.logs-tab-icon):not(.logs-tab-close) {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.logs-tab-close {
+    margin-left: auto;
+    color: #e3e7eb;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.logs-tab-close:hover {
+    color: #fff;
 }
 
 .logs-tab-icon {
