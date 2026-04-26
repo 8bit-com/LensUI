@@ -584,6 +584,20 @@ input:focus {
     font-weight: 600;
 }
 
+.port-forward-list {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+}
+
+.port-forward-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
 .port-forward-link,
 .port-forward-button {
     min-height: 24px;
@@ -595,14 +609,13 @@ input:focus {
 }
 
 .port-forward-button {
-    float: right;
-    margin-left: 8px;
     border: 1px solid #2d8fd2;
     border-radius: 4px;
     background: #2d8fd2;
     color: #ffffff;
-    padding: 5px 12px;
+    padding: 5px 14px;
     font-weight: 700;
+    white-space: nowrap;
 }
 
 .pods-table {

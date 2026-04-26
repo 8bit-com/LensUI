@@ -614,7 +614,7 @@ function portsCell(pod, ports) {
     if (!ports || ports.length === 0) {
         return `<span class="details-muted">No ports</span>`;
     }
-    return ports.map(port => portRow(pod, port)).join("");
+    return `<div class="port-forward-list">${ports.map(port => portRow(pod, port)).join("")}</div>`;
 }
 
 function detailsList(values) {
@@ -626,12 +626,14 @@ function detailsList(values) {
 
 function portRow(pod, port) {
     const label = `${port.name ? `${port.name} ` : ""}${port.containerPort}/${port.protocol || "TCP"}`;
-    return `<button class="port-forward-link" type="button" data-namespace="${escapeHtml(pod.namespace)}" data-pod="${escapeHtml(pod.name)}" data-port="${escapeHtml(port.containerPort)}">
-        ${escapeHtml(label)}
-    </button>
-    <button class="port-forward-button" type="button" data-namespace="${escapeHtml(pod.namespace)}" data-pod="${escapeHtml(pod.name)}" data-port="${escapeHtml(port.containerPort)}">
-        Forward...
-    </button>`;
+    return `<div class="port-forward-item">
+        <button class="port-forward-link" type="button" data-namespace="${escapeHtml(pod.namespace)}" data-pod="${escapeHtml(pod.name)}" data-port="${escapeHtml(port.containerPort)}">
+            ${escapeHtml(label)}
+        </button>
+        <button class="port-forward-button" type="button" data-namespace="${escapeHtml(pod.namespace)}" data-pod="${escapeHtml(pod.name)}" data-port="${escapeHtml(port.containerPort)}">
+            Forward...
+        </button>
+    </div>`;
 }
 
 async function openDetailsLogs() {
