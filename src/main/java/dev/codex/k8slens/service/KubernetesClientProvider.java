@@ -84,7 +84,16 @@ public class KubernetesClientProvider {
     }
 
     public synchronized Optional<Path> activeKubeConfigFile() {
-        return Optional.ofNullable(activeKubeConfigPath());
+        Path path = activeKubeConfigPath();
+        if (path == null) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(normalizedKubeConfigPath(path));
+        } catch (IOException ex) {
+            throw new KubernetesClientInitializationException("Cannot normalize kubeconfig: " + ex.getMessage(), ex);
+        }
     }
 
     private ApiClient createClient() throws IOException {

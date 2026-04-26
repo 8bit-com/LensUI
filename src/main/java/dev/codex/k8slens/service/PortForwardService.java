@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -43,10 +44,27 @@ public class PortForwardService {
             Process process = new ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .start();
+            ensureStarted(process);
             processes.put(id, process);
             return new PortForwardSession(id, namespace, podName, localPort, remotePort);
         } catch (IOException ex) {
             throw new PortForwardException("Cannot start kubectl port-forward: " + ex.getMessage(), ex);
+        }
+    }
+
+    private void ensureStarted(Process process) throws IOException {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new PortForwardException("Interrupted while starting port-forward", ex);
+        }
+
+        if (!process.isAlive()) {
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            throw new PortForwardException(
+                    output.isEmpty() ? "kubectl port-forward exited immediately" : output,
+                    null);
         }
     }
 

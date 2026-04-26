@@ -6,6 +6,7 @@ import dev.codex.k8slens.model.PodContainerDetails;
 import dev.codex.k8slens.model.PodDetails;
 import dev.codex.k8slens.model.PodPortSummary;
 import dev.codex.k8slens.model.PodSummary;
+import io.kubernetes.client.custom.Quantity;
 import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.openapi.models.V1Container;
@@ -308,8 +309,15 @@ public class KubernetesLensService {
         }
         return values.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(entry -> resourceLabel(entry.getKey()) + ": " + entry.getValue())
+                .map(entry -> resourceLabel(entry.getKey()) + ": " + quantityValue(entry.getValue()))
                 .collect(Collectors.joining(", "));
+    }
+
+    private String quantityValue(Object value) {
+        if (value instanceof Quantity) {
+            return ((Quantity) value).toSuffixedString();
+        }
+        return String.valueOf(value);
     }
 
     private String resourceLabel(String name) {
