@@ -65,6 +65,25 @@ public class KubernetesClientProvider {
         coreV1Api = null;
     }
 
+    public synchronized List<KubeConfigSummary> useKubeConfigDirectory(String directory) {
+        if (!StringUtils.hasText(directory)) {
+            throw new IllegalArgumentException("Kubeconfig directory path is required");
+        }
+
+        Path dir = Path.of(directory.trim()).toAbsolutePath().normalize();
+        if (!Files.isDirectory(dir)) {
+            throw new IllegalArgumentException("Kubeconfig directory not found: " + dir);
+        }
+
+        properties.setKubeConfigPath(null);
+        properties.setKubeConfigDir(dir.toString());
+        activeKubeConfigPath = configuredKubeConfigFiles().stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("No kubeconfig files found in directory: " + dir));
+        coreV1Api = null;
+        return listKubeConfigs();
+    }
+
     public synchronized Optional<String> activeNamespace() {
         Path path = activeKubeConfigPath();
         if (path == null || !Files.isRegularFile(path)) {

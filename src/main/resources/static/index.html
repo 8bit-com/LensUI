@@ -8,41 +8,9 @@
 </head>
 <body>
 <div class="lens">
-    <header class="titlebar">
-        <div class="window-nav">
-            <button class="icon-button" type="button">☰</button>
-            <button class="icon-button muted" type="button">‹</button>
-            <button class="icon-button muted" type="button">›</button>
-        </div>
-        <div class="titlebar-spacer"></div>
-        <button class="icon-button" type="button">●</button>
-        <div class="upgrade">◆ UPGRADE</div>
-        <div id="activeConfigBadge" class="user-badge">DE</div>
-        <button class="icon-button muted" type="button">_</button>
-        <button class="icon-button muted" type="button">□</button>
-        <button class="icon-button muted" type="button">×</button>
-    </header>
-
     <aside class="cluster-rail">
-        <button class="cluster-tile active" data-config="DEV" type="button">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>DE</span>
-        </button>
-        <button class="cluster-tile orange" data-config="GEOP-TEST-USER-CONF" type="button">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>KAEI</span>
-        </button>
-        <button class="cluster-tile magenta" data-config="TEST" type="button">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>TE</span>
-        </button>
-        <button class="cluster-tile yellow" data-config="UAT" type="button">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>UA</span>
-        </button>
-        <button class="cluster-tile green" data-config="PROD" type="button">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>PR</span>
-        </button>
-        <div class="rail-placeholder"></div>
-        <div class="rail-placeholder"></div>
-        <div class="rail-placeholder"></div>
-        <div class="rail-footer">‹ 1 ›</div>
+        <div id="clusterTiles" class="cluster-list"></div>
+        <button id="addConfigFolderButton" class="rail-add-button" type="button" title="Add kubeconfig folder">+</button>
     </aside>
 
     <aside class="navigator">
@@ -213,7 +181,6 @@
         </section>
     </main>
 
-    <button class="floating-add" type="button">＋</button>
     <div id="portForwardModal" class="modal-backdrop hidden">
         <div class="port-forward-dialog">
             <header class="port-forward-head">Port Forwarding for <span id="portForwardPodName"></span></header>
@@ -237,10 +204,28 @@
             </footer>
         </div>
     </div>
-    <footer class="statusbar">
-        You're using Lens Personal (for individuals or companies with &lt; $10M annual revenue or funding)
-        <span id="statusCluster">⬢ DEV (v1.22.12)</span>
-    </footer>
+
+    <div id="kubeConfigFolderModal" class="modal-backdrop hidden">
+        <div class="config-folder-dialog">
+            <header class="config-folder-head">Add kubeconfig folder</header>
+            <div class="config-folder-body">
+                <label class="config-folder-field">
+                    <span>Folder path</span>
+                    <input id="kubeConfigDirInput" type="text" placeholder="C:\Users\Name\.kube\configs">
+                </label>
+                <div class="config-folder-picker">
+                    <button id="chooseKubeConfigFolderButton" class="modal-button secondary" type="button">Choose folder</button>
+                    <span id="kubeConfigFolderChoice" class="config-folder-choice">No folder selected</span>
+                    <input id="kubeConfigFolderInput" class="hidden" type="file" webkitdirectory directory multiple>
+                </div>
+                <div id="kubeConfigFolderError" class="config-folder-error"></div>
+            </div>
+            <footer class="config-folder-actions">
+                <button id="cancelKubeConfigFolderButton" class="modal-button secondary" type="button">Cancel</button>
+                <button id="saveKubeConfigFolderButton" class="modal-button primary" type="button">Load</button>
+            </footer>
+        </div>
+    </div>
 </div>
 
 <svg class="svg-symbols" width="0" height="0" aria-hidden="true" focusable="false">

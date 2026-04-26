@@ -1,5 +1,6 @@
 const state = {
     kubeConfigs: [],
+    pendingKubeConfigFiles: [],
     namespaces: [],
     pods: [],
     filteredPods: [],
@@ -27,7 +28,16 @@ const state = {
 
 const els = {
     lens: document.querySelector(".lens"),
-    clusterTiles: document.querySelectorAll(".cluster-tile[data-config]"),
+    clusterTiles: document.querySelector("#clusterTiles"),
+    addConfigFolderButton: document.querySelector("#addConfigFolderButton"),
+    kubeConfigFolderModal: document.querySelector("#kubeConfigFolderModal"),
+    kubeConfigDirInput: document.querySelector("#kubeConfigDirInput"),
+    kubeConfigFolderInput: document.querySelector("#kubeConfigFolderInput"),
+    chooseKubeConfigFolderButton: document.querySelector("#chooseKubeConfigFolderButton"),
+    kubeConfigFolderChoice: document.querySelector("#kubeConfigFolderChoice"),
+    kubeConfigFolderError: document.querySelector("#kubeConfigFolderError"),
+    cancelKubeConfigFolderButton: document.querySelector("#cancelKubeConfigFolderButton"),
+    saveKubeConfigFolderButton: document.querySelector("#saveKubeConfigFolderButton"),
     kubeConfigSelect: document.querySelector("#kubeConfigSelect"),
     namespaceSelect: document.querySelector("#namespaceSelect"),
     searchInput: document.querySelector("#searchInput"),
@@ -70,9 +80,7 @@ const els = {
     collapseLogsButton: document.querySelector("#collapseLogsButton"),
     logsView: document.querySelector("#logsView"),
     pageTitle: document.querySelector("#pageTitle"),
-    navigatorClusterName: document.querySelector("#navigatorClusterName"),
-    activeConfigBadge: document.querySelector("#activeConfigBadge"),
-    statusCluster: document.querySelector("#statusCluster")
+    navigatorClusterName: document.querySelector("#navigatorClusterName")
 };
 
 const UI_STATE_KEY = "k8sLensUiState";
@@ -246,12 +254,16 @@ async function api(path, options = {}) {
 
 async function loadKubeConfigs() {
     const response = await api("/api/kubeconfigs");
-    state.kubeConfigs = await response.json();
+    applyKubeConfigs(await response.json());
+}
 
+function applyKubeConfigs(configs) {
+    state.kubeConfigs = Array.isArray(configs) ? configs : [];
     if (state.kubeConfigs.length === 0) {
         els.kubeConfigSelect.innerHTML = `<option value="">Default kubeconfig</option>`;
         els.kubeConfigSelect.disabled = true;
         state.activeConfig = "DEV";
+        renderClusterTiles();
         renderConfigLabels();
         return;
     }
@@ -262,19 +274,79 @@ async function loadKubeConfigs() {
     els.kubeConfigSelect.innerHTML = state.kubeConfigs.map(config =>
         `<option value="${escapeHtml(config.name)}" ${config.active ? "selected" : ""}>${escapeHtml(config.name)}</option>`
     ).join("");
+    renderClusterTiles();
     renderConfigLabels();
 }
 
 async function activateKubeConfig(name) {
     setStatus("loading", "Switching kubeconfig");
     const response = await api(`/api/kubeconfigs/${encodeURIComponent(name)}/activate`, { method: "POST" });
-    state.kubeConfigs = await response.json();
-    const active = state.kubeConfigs.find(config => config.active);
-    state.activeConfig = active ? active.name : name;
+    applyKubeConfigs(await response.json());
     resetLogTabs();
-    renderConfigLabels();
     await loadNamespaces();
     await loadPods();
+}
+
+function openKubeConfigFolderDialog() {
+    state.pendingKubeConfigFiles = [];
+    els.kubeConfigFolderInput.value = "";
+    els.kubeConfigFolderChoice.textContent = "No folder selected";
+    els.kubeConfigFolderError.textContent = "";
+    els.kubeConfigFolderModal.classList.remove("hidden");
+    els.kubeConfigDirInput.focus();
+}
+
+function closeKubeConfigFolderDialog() {
+    els.kubeConfigFolderModal.classList.add("hidden");
+}
+
+function selectedFolderName(files) {
+    const first = files[0];
+    if (!first) {
+        return "No folder selected";
+    }
+
+    const relativePath = first.webkitRelativePath || first.name;
+    return relativePath.split("/")[0] || first.name;
+}
+
+async function loadKubeConfigFolder() {
+    const directory = els.kubeConfigDirInput.value.trim();
+    let response;
+
+    els.kubeConfigFolderError.textContent = "";
+    els.saveKubeConfigFolderButton.disabled = true;
+
+    try {
+        if (directory) {
+            response = await api("/api/kubeconfigs/directory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: directory })
+            });
+        } else if (state.pendingKubeConfigFiles.length > 0) {
+            const body = new FormData();
+            state.pendingKubeConfigFiles.forEach(file => {
+                body.append("files", file, file.webkitRelativePath || file.name);
+            });
+            response = await api("/api/kubeconfigs/import-folder", {
+                method: "POST",
+                body
+            });
+        } else {
+            throw new Error("Choose a folder or enter a folder path");
+        }
+
+        applyKubeConfigs(await response.json());
+        closeKubeConfigFolderDialog();
+        resetLogTabs();
+        await loadNamespaces();
+        await loadPods();
+    } catch (error) {
+        els.kubeConfigFolderError.textContent = error.message;
+    } finally {
+        els.saveKubeConfigFolderButton.disabled = false;
+    }
 }
 
 async function loadNamespaces() {
@@ -1368,17 +1440,30 @@ function renderConfigLabels() {
 
     els.pageTitle.textContent = `Pods - ${name}`;
     els.navigatorClusterName.textContent = name;
-    els.activeConfigBadge.textContent = shortConfigName(name);
-    els.statusCluster.textContent = `⬢ ${name} (v1.22.12)`;
 
-    els.clusterTiles.forEach(tile => {
+    els.clusterTiles.querySelectorAll(".cluster-tile[data-config]").forEach(tile => {
         tile.classList.toggle("active", tile.dataset.config === name);
     });
 }
 
+function renderClusterTiles() {
+    const colors = ["#c64113", "#df0074", "#d8d000", "#07985b", "#3a98dd", "#7c6ee6"];
+
+    els.clusterTiles.innerHTML = state.kubeConfigs.map((config, index) => `
+        <button class="cluster-tile" style="--tile-color: ${colors[index % colors.length]}" data-config="${escapeHtml(config.name)}" type="button" title="${escapeHtml(config.path || config.name)}">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>${escapeHtml(shortConfigName(config.name))}</span>
+        </button>
+    `).join("");
+}
+
 function shortConfigName(name) {
-    const letters = String(name || "DE").replace(/[^a-zA-ZА-Яа-я0-9]/g, "");
-    return (letters.slice(0, 2) || "DE").toUpperCase();
+    const cleanName = String(name || "KC").replace(/\.[^.]+$/, "");
+    const parts = cleanName.split(/[^a-zA-ZА-Яа-я0-9]+/).filter(Boolean);
+    const label = parts.length > 1
+        ? parts.map(part => part[0]).join("")
+        : cleanName.replace(/[^a-zA-ZА-Яа-я0-9]/g, "");
+
+    return (label.slice(0, 4) || "KC").toUpperCase();
 }
 
 function setStatus(kind, text) {
@@ -1416,20 +1501,49 @@ els.kubeConfigSelect.addEventListener("change", () => {
     activateKubeConfig(els.kubeConfigSelect.value).catch(handleError);
 });
 
-els.clusterTiles.forEach(tile => {
-    tile.addEventListener("click", () => {
-        const config = tile.dataset.config;
+els.clusterTiles.addEventListener("click", event => {
+    const tile = event.target.closest(".cluster-tile[data-config]");
+    if (!tile) {
+        return;
+    }
 
-        if (!config || config === state.activeConfig) {
-            return;
-        }
+    const config = tile.dataset.config;
 
-        if (Array.from(els.kubeConfigSelect.options).some(option => option.value === config)) {
-            els.kubeConfigSelect.value = config;
-        }
+    if (!config || config === state.activeConfig) {
+        return;
+    }
 
-        activateKubeConfig(config).catch(handleError);
-    });
+    if (Array.from(els.kubeConfigSelect.options).some(option => option.value === config)) {
+        els.kubeConfigSelect.value = config;
+    }
+
+    activateKubeConfig(config).catch(handleError);
+});
+
+els.addConfigFolderButton.addEventListener("click", openKubeConfigFolderDialog);
+
+els.chooseKubeConfigFolderButton.addEventListener("click", () => {
+    els.kubeConfigFolderInput.click();
+});
+
+els.kubeConfigFolderInput.addEventListener("change", () => {
+    state.pendingKubeConfigFiles = Array.from(els.kubeConfigFolderInput.files || []);
+    els.kubeConfigFolderChoice.textContent = selectedFolderName(state.pendingKubeConfigFiles);
+    if (state.pendingKubeConfigFiles.length > 0) {
+        els.kubeConfigDirInput.value = "";
+    }
+});
+
+els.cancelKubeConfigFolderButton.addEventListener("click", closeKubeConfigFolderDialog);
+
+els.saveKubeConfigFolderButton.addEventListener("click", () => {
+    loadKubeConfigFolder().catch(handleError);
+});
+
+els.kubeConfigFolderModal.addEventListener("click", event => {
+    if (event.target === els.kubeConfigFolderModal) {
+        closeKubeConfigFolderDialog();
+    }
 });
 
 els.namespaceSelect.addEventListener("change", () => {
