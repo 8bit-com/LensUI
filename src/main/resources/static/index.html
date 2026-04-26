@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kubernetes Lens UI</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="lens">
+    <header class="titlebar">
+        <div class="window-nav">
+            <button class="icon-button" type="button">☰</button>
+            <button class="icon-button muted" type="button">‹</button>
+            <button class="icon-button muted" type="button">›</button>
+        </div>
+        <div class="titlebar-spacer"></div>
+        <button class="icon-button" type="button">●</button>
+        <div class="upgrade">◆ UPGRADE</div>
+        <div id="activeConfigBadge" class="user-badge">DE</div>
+        <button class="icon-button muted" type="button">_</button>
+        <button class="icon-button muted" type="button">□</button>
+        <button class="icon-button muted" type="button">×</button>
+    </header>
+
+    <aside class="cluster-rail">
+        <button class="cluster-tile active" data-config="DEV" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>DE</span>
+        </button>
+        <button class="cluster-tile orange" data-config="GEOP-TEST-USER-CONF" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>KAEI</span>
+        </button>
+        <button class="cluster-tile magenta" data-config="TEST" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>TE</span>
+        </button>
+        <button class="cluster-tile yellow" data-config="UAT" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>UA</span>
+        </button>
+        <button class="cluster-tile green" data-config="PROD" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>PR</span>
+        </button>
+        <div class="rail-placeholder"></div>
+        <div class="rail-placeholder"></div>
+        <div class="rail-placeholder"></div>
+        <div class="rail-footer">‹ 1 ›</div>
+    </aside>
+
+    <aside class="navigator">
+        <div class="navigator-head">Navigator</div>
+
+        <label class="field">
+            <select id="kubeConfigSelect">
+                <option value="">Default kubeconfig</option>
+            </select>
+        </label>
+
+        <div class="cluster-line">
+            <span class="chevron">‹</span>
+            <span class="kube-dot">⬢</span>
+            <span id="navigatorClusterName">DEV</span>
+            <span class="healthy-dot"></span>
+            <span class="chevron">›</span>
+        </div>
+
+        <nav class="nav-tree">
+            <div class="tree-item active"><span>⌂</span> Applications</div>
+            <div class="tree-item"><span>▸</span> Workloads</div>
+            <div class="tree-item"><span>⚙</span> Config</div>
+            <div class="tree-item"><span>⇅</span> Network</div>
+            <div class="tree-item"><span>▰</span> Storage</div>
+            <div class="tree-item"><span>♜</span> Helm</div>
+            <div class="tree-item"><span>◈</span> Access Control</div>
+            <div class="tree-item"><span>✚</span> Custom Resources</div>
+        </nav>
+    </aside>
+
+    <main class="main">
+        <section class="tabs-row">
+            <div class="tab-strip">
+                <div class="resource-tab">
+                    <span class="tab-kube">⬢</span>
+                    <span id="pageTitle">Pods - DEV</span>
+                    <button type="button">×</button>
+                </div>
+                <div class="tab-empty"></div>
+            </div>
+        </section>
+
+        <section class="controls-row">
+            <label class="select-wrap">
+                <select id="namespaceSelect">
+                    <option value="">All namespaces</option>
+                </select>
+            </label>
+            <label class="search-wrap">
+                <span>Aa</span>
+                <span>*</span>
+                <input id="searchInput" type="search" placeholder="Search Pods...">
+            </label>
+            <button id="refreshButton" class="toolbar-icon" type="button">↧</button>
+            <span id="podCount" class="item-count">0 items</span>
+            <span id="clusterText" class="connection-text">Connecting</span>
+            <span id="clusterStatus" class="status-dot"></span>
+        </section>
+
+        <section class="pods-pane">
+            <table class="pods-table">
+                <thead>
+                <tr>
+                    <th class="check-col"><input type="checkbox"></th>
+                    <th class="name-col">Name</th>
+                    <th class="warn-col">⚠</th>
+                    <th>Namespace</th>
+                    <th>Container</th>
+                    <th>Restarts</th>
+                    <th>Node</th>
+                    <th>Age</th>
+                    <th>Status</th>
+                    <th class="menu-col">⋮</th>
+                </tr>
+                </thead>
+                <tbody id="podsBody"></tbody>
+            </table>
+            <div id="emptyPods" class="empty hidden">No pods found</div>
+        </section>
+
+        <div id="logsResizeHandle" class="logs-resize-handle" title="Resize logs panel"></div>
+
+        <section id="logsPanel" class="logs-panel">
+            <div class="logs-tabbar">
+                <div class="logs-tab active">
+                    <span class="logs-tab-icon">≡</span>
+                    <span id="selectedName">Select a pod</span>
+                    <button type="button">×</button>
+                </div>
+                <button class="add-tab" type="button">＋</button>
+                <div class="panel-actions">
+                    <button id="expandLogsButton" class="panel-action-button" type="button" title="Expand logs">⛶</button>
+                    <button id="collapseLogsButton" class="panel-action-button" type="button" title="Collapse logs">˅</button>
+                </div>
+            </div>
+
+            <div class="logs-toolbar">
+                <button class="icon-button muted" type="button">⟳</button>
+                <label class="select-wrap small">
+                    <select id="containerSelect"></select>
+                </label>
+                <label class="search-wrap logs-search">
+                    <span>⌁</span>
+                    <span>Aa</span>
+                    <span>*</span>
+                    <input id="logSearchInput" type="search" placeholder="Search in logs">
+                </label>
+                <span id="logMatchCounter" class="log-match">0 / 0</span>
+                <button id="prevLogMatchButton" class="toolbar-icon match-nav" type="button" title="Previous match">⌃</button>
+                <button id="nextLogMatchButton" class="toolbar-icon match-nav" type="button" title="Next match">⌄</button>
+                <span class="toolbar-separator"></span>
+                <label class="tail-field">
+                    Tail
+                    <input id="tailInput" type="number" min="1" value="300">
+                </label>
+                <button id="previousPodLogsButton" class="toolbar-toggle" type="button" title="Load logs from previous pod">Prev pod</button>
+                <button id="compactJsonButton" class="toolbar-toggle" type="button" title="Show only timestamp and message for JSON logs">JSON</button>
+                <button id="autoRefreshButton" class="toolbar-toggle active" type="button">Live</button>
+                <label class="tail-field">
+                    Every
+                    <select id="logRefreshInterval">
+                        <option value="2000">2s</option>
+                        <option value="5000" selected>5s</option>
+                        <option value="10000">10s</option>
+                        <option value="30000">30s</option>
+                    </select>
+                </label>
+            </div>
+
+            <div id="selectedMeta" class="logs-meta">Select a pod to display logs</div>
+            <pre id="logsView" class="logs-view"></pre>
+        </section>
+    </main>
+
+    <button class="floating-add" type="button">＋</button>
+    <footer class="statusbar">
+        You're using Lens Personal (for individuals or companies with &lt; $10M annual revenue or funding)
+        <span id="statusCluster">⬢ DEV (v1.22.12)</span>
+    </footer>
+</div>
+
+<svg class="svg-symbols" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+        <symbol id="clusterIcon" viewBox="0 0 48 48">
+            <polygon class="icon-helmet" points="24 4 43 14.5 43 32.5 24 43.5 5 32.5 5 14.5"/>
+            <polygon class="icon-shadow" points="5 27 43 27 43 32.5 24 43.5 5 32.5"/>
+            <g class="icon-wheel">
+                <circle cx="24" cy="27" r="12.5" fill="none" stroke-width="3"/>
+                <circle cx="24" cy="27" r="4.1" fill="none" stroke-width="3"/>
+                <line x1="24" y1="12.8" x2="24" y2="41.2" stroke-width="3" stroke-linecap="round"/>
+                <line x1="9.8" y1="27" x2="38.2" y2="27" stroke-width="3" stroke-linecap="round"/>
+                <line x1="14" y1="17" x2="34" y2="37" stroke-width="3" stroke-linecap="round"/>
+                <line x1="34" y1="17" x2="14" y2="37" stroke-width="3" stroke-linecap="round"/>
+            </g>
+        </symbol>
+    </defs>
+</svg>
+
+<script src="/app.js"></script>
+</body>
+</html>
