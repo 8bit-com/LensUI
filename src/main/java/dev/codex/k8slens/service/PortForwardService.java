@@ -12,12 +12,13 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class PortForwardService {
 
     private final KubernetesClientProvider clientProvider;
-    private final ConcurrentMap<String, Process> processes = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, ForwardProcess> processes = new ConcurrentHashMap<>();
 
     public PortForwardService(KubernetesClientProvider clientProvider) {
         this.clientProvider = clientProvider;
@@ -25,6 +26,8 @@ public class PortForwardService {
 
     public PortForwardSession start(String namespace, String podName, int remotePort, Integer requestedLocalPort) {
         int localPort = requestedLocalPort == null ? randomLocalPort() : requestedLocalPort;
+        stopByLocalPort(localPort);
+
         String id = UUID.randomUUID().toString();
         List<String> command = new ArrayList<>();
         command.add("kubectl");
@@ -45,10 +48,39 @@ public class PortForwardService {
                     .redirectErrorStream(true)
                     .start();
             ensureStarted(process);
-            processes.put(id, process);
+            processes.put(id, new ForwardProcess(process, localPort));
             return new PortForwardSession(id, namespace, podName, localPort, remotePort);
         } catch (IOException ex) {
             throw new PortForwardException("Cannot start kubectl port-forward: " + ex.getMessage(), ex);
+        }
+    }
+
+    public void stopAll() {
+        processes.forEach((id, forward) -> stopProcess(id, forward));
+    }
+
+    private void stopByLocalPort(int localPort) {
+        processes.forEach((id, forward) -> {
+            if (forward.localPort == localPort || !forward.process.isAlive()) {
+                stopProcess(id, forward);
+            }
+        });
+    }
+
+    private void stopProcess(String id, ForwardProcess forward) {
+        processes.remove(id, forward);
+        if (!forward.process.isAlive()) {
+            return;
+        }
+
+        forward.process.destroy();
+        try {
+            if (!forward.process.waitFor(2, TimeUnit.SECONDS)) {
+                forward.process.destroyForcibly();
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            forward.process.destroyForcibly();
         }
     }
 
@@ -80,6 +112,16 @@ public class PortForwardService {
     public static class PortForwardException extends RuntimeException {
         public PortForwardException(String message, Throwable cause) {
             super(message, cause);
+        }
+    }
+
+    private static class ForwardProcess {
+        private final Process process;
+        private final int localPort;
+
+        private ForwardProcess(Process process, int localPort) {
+            this.process = process;
+            this.localPort = localPort;
         }
     }
 }

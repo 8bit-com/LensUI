@@ -44,6 +44,7 @@ public class ClusterController {
 
     @PostMapping("/kubeconfigs/{name}/activate")
     public List<KubeConfigSummary> activateKubeConfig(@PathVariable String name) {
+        portForwardService.stopAll();
         clientProvider.activateKubeConfig(name);
         return clientProvider.listKubeConfigs();
     }
