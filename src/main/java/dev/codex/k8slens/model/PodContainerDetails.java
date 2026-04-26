@@ -6,6 +6,7 @@ public class PodContainerDetails {
 
     private final String name;
     private final String image;
+    private final String imagePullPolicy;
     private final boolean ready;
     private final int restartCount;
     private final String state;
@@ -18,6 +19,7 @@ public class PodContainerDetails {
     public PodContainerDetails(
             String name,
             String image,
+            String imagePullPolicy,
             boolean ready,
             int restartCount,
             String state,
@@ -28,6 +30,7 @@ public class PodContainerDetails {
             List<String> mounts) {
         this.name = name;
         this.image = image;
+        this.imagePullPolicy = imagePullPolicy;
         this.ready = ready;
         this.restartCount = restartCount;
         this.state = state;
@@ -44,6 +47,10 @@ public class PodContainerDetails {
 
     public String getImage() {
         return image;
+    }
+
+    public String getImagePullPolicy() {
+        return imagePullPolicy;
     }
 
     public boolean isReady() {

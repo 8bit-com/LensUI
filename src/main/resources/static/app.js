@@ -41,7 +41,6 @@ const els = {
     detailsLabels: document.querySelector("#detailsLabels"),
     detailsAnnotations: document.querySelector("#detailsAnnotations"),
     openLogsButton: document.querySelector("#openLogsButton"),
-    forwardPodButton: document.querySelector("#forwardPodButton"),
     closeDetailsButton: document.querySelector("#closeDetailsButton"),
     emptyPods: document.querySelector("#emptyPods"),
     podCount: document.querySelector("#podCount"),
@@ -514,7 +513,23 @@ function renderPodDetails() {
     els.lens.classList.add("details-open");
     els.podDetailsPanel.classList.remove("hidden");
     els.detailsTitle.textContent = `Pod: ${pod.name}`;
+    const containers = pod.containerDetails && pod.containerDetails.length > 0 ? pod.containerDetails : pod.containers || [];
+    const primaryContainer = containers[0] || {};
+    const primaryPorts = (pod.ports || []).filter(port => port.containerName === primaryContainer.name);
+
     els.detailsProperties.innerHTML = [
+        detailRow("Status", `${String(pod.phase || "").toLowerCase()}, ${primaryContainer.ready ? "ready" : "not ready"}`, "status-running"),
+        detailRow("Last Status", primaryContainer.lastState || ""),
+        detailRowHtml("Image", codeValue(primaryContainer.image || "")),
+        detailRow("ImagePullPolicy", primaryContainer.imagePullPolicy || ""),
+        detailRowHtml("Ports", portsCell(pod, primaryPorts)),
+        detailRow("Environment", listSummary(primaryContainer.environment, "Environmental Variables")),
+        detailRowHtml("Mounts", detailsList(primaryContainer.mounts || [])),
+        detailRow("Requests", primaryContainer.requests || ""),
+        detailRow("Limits", primaryContainer.limits || "")
+    ].join("");
+
+    els.detailsContainers.innerHTML = [
         detailRow("Created", pod.createdAt || pod.age),
         detailRow("Name", pod.name),
         detailRow("Namespace", pod.namespace),
@@ -531,26 +546,6 @@ function renderPodDetails() {
         detailRow("Ready", pod.ready),
         detailRow("Restarts", pod.restarts)
     ].join("");
-
-    const containers = pod.containerDetails && pod.containerDetails.length > 0 ? pod.containerDetails : pod.containers || [];
-    els.detailsContainers.innerHTML = containers.map(container => {
-        const ports = (pod.ports || [])
-            .filter(port => port.containerName === container.name)
-            .map(port => portRow(pod, port))
-            .join("") || `<span class="details-muted">No ports</span>`;
-        return `<div class="container-detail">
-            <div class="container-detail-name">${escapeHtml(container.name)}</div>
-            ${detailRow("Status", container.state, container.ready ? "status-running" : "status-warning")}
-            ${detailRow("Last Status", container.lastState || "")}
-            ${detailRow("Image", container.image)}
-            ${detailRow("Restarts", container.restartCount)}
-            <div class="details-row"><span>Ports</span><span>${ports}</span></div>
-            ${detailRow("Environment", listSummary(container.environment, "Environmental Variables"))}
-            ${detailRow("Mounts", listSummary(container.mounts, "Mounts"))}
-            ${detailRow("Requests", container.requests || "")}
-            ${detailRow("Limits", container.limits || "")}
-        </div>`;
-    }).join("");
 
     els.detailsConditions.innerHTML = listRows(pod.conditions || []);
     els.detailsLabels.innerHTML = keyValueRows(pod.labels || {});
@@ -569,8 +564,19 @@ function closePodDetails() {
 function detailRow(label, value, valueClass = "") {
     return `<div class="details-row">
         <span>${escapeHtml(label)}</span>
-        <span class="${escapeHtml(valueClass)}">${escapeHtml(value ?? "")}</span>
+        <span class="${escapeHtml(valueClass)}">${escapeHtml(value ?? "").replace(/\n/g, "<br>")}</span>
     </div>`;
+}
+
+function detailRowHtml(label, html, valueClass = "") {
+    return `<div class="details-row">
+        <span>${escapeHtml(label)}</span>
+        <span class="${escapeHtml(valueClass)}">${html}</span>
+    </div>`;
+}
+
+function codeValue(value) {
+    return value ? `<span class="details-code">${escapeHtml(value)}</span>` : "";
 }
 
 function listSummary(values, noun) {
@@ -594,6 +600,20 @@ function keyValueRows(values) {
         return `<div class="details-row"><span></span><span class="details-muted">No items</span></div>`;
     }
     return entries.map(([key, value]) => detailRow(key, value)).join("");
+}
+
+function portsCell(pod, ports) {
+    if (!ports || ports.length === 0) {
+        return `<span class="details-muted">No ports</span>`;
+    }
+    return ports.map(port => portRow(pod, port)).join("");
+}
+
+function detailsList(values) {
+    if (!values || values.length === 0) {
+        return "";
+    }
+    return values.map(value => `<span class="details-code">${escapeHtml(value)}</span>`).join("<br>");
 }
 
 function portRow(pod, port) {
@@ -1426,15 +1446,6 @@ els.podsBody.addEventListener("click", event => {
 if (els.openLogsButton) {
     els.openLogsButton.addEventListener("click", () => {
         openDetailsLogs().catch(handleError);
-    });
-}
-
-if (els.forwardPodButton) {
-    els.forwardPodButton.addEventListener("click", () => {
-        if (!state.detailsPod) {
-            return;
-        }
-        startPortForward(state.detailsPod.namespace, state.detailsPod.name).catch(handleError);
     });
 }
 

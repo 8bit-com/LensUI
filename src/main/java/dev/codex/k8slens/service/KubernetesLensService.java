@@ -249,10 +249,11 @@ public class KubernetesLensService {
         return new PodContainerDetails(
                 nullToBlank(container.getName()),
                 nullToBlank(container.getImage()),
+                nullToBlank(container.getImagePullPolicy()),
                 status != null && Boolean.TRUE.equals(status.getReady()),
                 status == null || status.getRestartCount() == null ? 0 : status.getRestartCount(),
                 status == null ? "Unknown" : state(status.getState()),
-                status == null ? "" : state(status.getLastState()),
+                status == null ? "" : lastState(status.getLastState()),
                 resources == null ? "" : quantityMap(resources.getRequests()),
                 resources == null ? "" : quantityMap(resources.getLimits()),
                 Optional.ofNullable(container.getEnv()).orElse(Collections.emptyList()).stream()
@@ -263,6 +264,35 @@ public class KubernetesLensService {
                 Optional.ofNullable(container.getVolumeMounts()).orElse(Collections.emptyList()).stream()
                         .map(this::formatMount)
                         .collect(Collectors.toList()));
+    }
+
+    private String lastState(V1ContainerState state) {
+        if (state == null) {
+            return "";
+        }
+        if (state.getTerminated() != null) {
+            List<String> lines = new ArrayList<>();
+            lines.add("terminated");
+            String reason = nullToBlank(state.getTerminated().getReason());
+            Integer exitCode = state.getTerminated().getExitCode();
+            if (StringUtils.hasText(reason) || exitCode != null) {
+                lines.add("Reason: " + reason + (exitCode == null ? "" : " - exit code: " + exitCode));
+            }
+            if (state.getTerminated().getStartedAt() != null) {
+                lines.add("Started at: " + state.getTerminated().getStartedAt());
+            }
+            if (state.getTerminated().getFinishedAt() != null) {
+                lines.add("Finished at: " + state.getTerminated().getFinishedAt());
+            }
+            return String.join("\n", lines);
+        }
+        if (state.getWaiting() != null) {
+            return "waiting " + nullToBlank(state.getWaiting().getReason());
+        }
+        if (state.getRunning() != null) {
+            return "running";
+        }
+        return "";
     }
 
     private String formatMount(V1VolumeMount mount) {

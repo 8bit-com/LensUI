@@ -127,17 +127,25 @@
         <section id="podDetailsPanel" class="pod-details-panel hidden">
             <header class="pod-details-head">
                 <strong id="detailsTitle">Pod</strong>
-                <button id="openLogsButton" class="toolbar-toggle" type="button">Logs</button>
-                <button id="forwardPodButton" class="toolbar-toggle" type="button">Forward...</button>
+                <button id="openLogsButton" class="panel-action-button" type="button" title="Logs">›_</button>
                 <button id="closeDetailsButton" class="panel-action-button" type="button" title="Close details">×</button>
             </header>
             <div class="pod-details-body">
                 <section class="details-section">
-                    <h3>Properties</h3>
+                    <h3>Metrics</h3>
+                    <div class="metrics-placeholder">
+                        <div class="metrics-spinner">( )</div>
+                    </div>
+                </section>
+                <section class="details-section">
                     <div id="detailsProperties" class="details-table"></div>
                 </section>
                 <section class="details-section">
-                    <h3>Containers</h3>
+                    <h3>Events</h3>
+                    <div class="details-empty">No events found</div>
+                </section>
+                <section class="details-section">
+                    <h3>Pod Properties</h3>
                     <div id="detailsContainers" class="details-table"></div>
                 </section>
                 <section class="details-section">
