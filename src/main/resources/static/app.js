@@ -303,12 +303,22 @@ function orderKubeConfigs(configs) {
 }
 
 async function activateKubeConfig(name) {
+    saveActiveLogTab();
+    saveLogTabsState();
+
     setStatus("loading", "Switching kubeconfig");
-    const response = await api(`/api/kubeconfigs/${encodeURIComponent(name)}/activate`, { method: "POST" });
+
+    const response = await api(`/api/kubeconfigs/${encodeURIComponent(name)}/activate`, {
+        method: "POST"
+    });
+
     applyKubeConfigs(await response.json());
-    resetLogTabs();
+
     await loadNamespaces();
     await loadPods();
+
+    renderLogTabs();
+    restoreLogTab(activeLogTab());
 }
 
 function openKubeConfigFolderDialog() {
@@ -1671,7 +1681,6 @@ els.kubeConfigFolderModal.addEventListener("click", event => {
 });
 
 els.namespaceSelect.addEventListener("change", () => {
-    resetLogTabs();
     loadPods().catch(handleError);
 });
 
