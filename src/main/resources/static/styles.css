@@ -1093,6 +1093,114 @@ input:focus {
     box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
 }
 
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    background: rgb(0 0 0 / 45%);
+}
+
+.modal-backdrop.hidden {
+    display: none;
+}
+
+.port-forward-dialog {
+    width: min(560px, calc(100vw - 48px));
+    border: 1px solid #30363c;
+    background: #292d33;
+    box-shadow: 0 18px 46px rgb(0 0 0 / 45%);
+}
+
+.port-forward-head {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 76px;
+    padding: 0 22px;
+    background: #363b43;
+    color: var(--text-strong);
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.port-forward-body {
+    padding: 30px 24px 24px;
+    border-top: 1px solid #30363c;
+    border-bottom: 1px solid #252a30;
+    color: #c4cad0;
+}
+
+.port-forward-local {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    font-size: 13px;
+}
+
+.port-forward-local input {
+    width: 66px;
+    min-height: 24px;
+    border: 0;
+    border-bottom: 2px solid #4f9bd8;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--text-strong);
+    font-weight: 700;
+}
+
+.port-forward-local input::placeholder {
+    color: #c4cad0;
+    opacity: 1;
+}
+
+.port-forward-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    margin-top: 10px;
+    font-size: 13px;
+}
+
+.port-forward-check input {
+    width: 13px;
+    height: 13px;
+    min-height: 0;
+    accent-color: #4f9bd8;
+}
+
+.port-forward-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 84px;
+    padding: 0 24px;
+    background: #262a30;
+}
+
+.modal-button {
+    min-width: 74px;
+    min-height: 30px;
+    border: 0;
+    border-radius: 3px;
+    color: #fff;
+    padding: 5px 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.modal-button.secondary {
+    background: #444951;
+}
+
+.modal-button.primary {
+    background: #3d95d8;
+}
+
 .statusbar {
     grid-column: 2 / -1;
     grid-row: 3;

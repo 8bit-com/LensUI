@@ -4,6 +4,7 @@ import dev.codex.k8slens.model.PortForwardSession;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +23,7 @@ public class PortForwardService {
     }
 
     public PortForwardSession start(String namespace, String podName, int remotePort, Integer requestedLocalPort) {
-        int localPort = requestedLocalPort == null ? remotePort : requestedLocalPort;
+        int localPort = requestedLocalPort == null ? randomLocalPort() : requestedLocalPort;
         String id = UUID.randomUUID().toString();
         List<String> command = new ArrayList<>();
         command.add("kubectl");
@@ -46,6 +47,15 @@ public class PortForwardService {
             return new PortForwardSession(id, namespace, podName, localPort, remotePort);
         } catch (IOException ex) {
             throw new PortForwardException("Cannot start kubectl port-forward: " + ex.getMessage(), ex);
+        }
+    }
+
+    private int randomLocalPort() {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            socket.setReuseAddress(true);
+            return socket.getLocalPort();
+        } catch (IOException ex) {
+            throw new PortForwardException("Cannot allocate random local port: " + ex.getMessage(), ex);
         }
     }
 

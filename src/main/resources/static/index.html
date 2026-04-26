@@ -214,6 +214,29 @@
     </main>
 
     <button class="floating-add" type="button">＋</button>
+    <div id="portForwardModal" class="modal-backdrop hidden">
+        <div class="port-forward-dialog">
+            <header class="port-forward-head">Port Forwarding for <span id="portForwardPodName"></span></header>
+            <div class="port-forward-body">
+                <label class="port-forward-local">
+                    <span>Local port to forward from:</span>
+                    <input id="portForwardLocalPort" type="number" min="1" placeholder="Random">
+                </label>
+                <label class="port-forward-check">
+                    <input id="portForwardHttps" type="checkbox">
+                    <span>https</span>
+                </label>
+                <label class="port-forward-check">
+                    <input id="portForwardOpenBrowser" type="checkbox" checked>
+                    <span>Open in Browser</span>
+                </label>
+            </div>
+            <footer class="port-forward-actions">
+                <button id="cancelPortForwardButton" class="modal-button secondary" type="button">Cancel</button>
+                <button id="startPortForwardButton" class="modal-button primary" type="button">Start</button>
+            </footer>
+        </div>
+    </div>
     <footer class="statusbar">
         You're using Lens Personal (for individuals or companies with &lt; $10M annual revenue or funding)
         <span id="statusCluster">⬢ DEV (v1.22.12)</span>

@@ -308,8 +308,21 @@ public class KubernetesLensService {
         }
         return values.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(entry -> entry.getKey() + ": " + entry.getValue())
+                .map(entry -> resourceLabel(entry.getKey()) + ": " + entry.getValue())
                 .collect(Collectors.joining(", "));
+    }
+
+    private String resourceLabel(String name) {
+        if ("cpu".equalsIgnoreCase(name)) {
+            return "CPU";
+        }
+        if ("memory".equalsIgnoreCase(name)) {
+            return "Memory";
+        }
+        if ("ephemeral-storage".equalsIgnoreCase(name)) {
+            return "Ephemeral Storage";
+        }
+        return name;
     }
 
     private PodSummary toSummary(V1Pod pod) {
