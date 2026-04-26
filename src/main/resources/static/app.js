@@ -1,6 +1,8 @@
 const state = {
     kubeConfigs: [],
     pendingKubeConfigFiles: [],
+    draggedConfig: "",
+    suppressClusterClick: false,
     namespaces: [],
     pods: [],
     filteredPods: [],
@@ -258,7 +260,7 @@ async function loadKubeConfigs() {
 }
 
 function applyKubeConfigs(configs) {
-    state.kubeConfigs = Array.isArray(configs) ? configs : [];
+    state.kubeConfigs = orderKubeConfigs(Array.isArray(configs) ? configs : []);
     if (state.kubeConfigs.length === 0) {
         els.kubeConfigSelect.innerHTML = `<option value="">Default kubeconfig</option>`;
         els.kubeConfigSelect.disabled = true;
@@ -276,6 +278,28 @@ function applyKubeConfigs(configs) {
     ).join("");
     renderClusterTiles();
     renderConfigLabels();
+}
+
+function orderKubeConfigs(configs) {
+    const savedOrder = loadUiState().kubeConfigOrder;
+    if (!Array.isArray(savedOrder) || savedOrder.length === 0) {
+        return configs;
+    }
+
+    const positionByName = new Map(savedOrder.map((name, index) => [name, index]));
+    return configs
+        .map((config, originalIndex) => ({ config, originalIndex }))
+        .sort((left, right) => {
+            const leftPosition = positionByName.has(left.config.name)
+                ? positionByName.get(left.config.name)
+                : Number.MAX_SAFE_INTEGER;
+            const rightPosition = positionByName.has(right.config.name)
+                ? positionByName.get(right.config.name)
+                : Number.MAX_SAFE_INTEGER;
+
+            return leftPosition - rightPosition || left.originalIndex - right.originalIndex;
+        })
+        .map(item => item.config);
 }
 
 async function activateKubeConfig(name) {
@@ -1450,10 +1474,53 @@ function renderClusterTiles() {
     const colors = ["#c64113", "#df0074", "#d8d000", "#07985b", "#3a98dd", "#7c6ee6"];
 
     els.clusterTiles.innerHTML = state.kubeConfigs.map((config, index) => `
-        <button class="cluster-tile" style="--tile-color: ${colors[index % colors.length]}" data-config="${escapeHtml(config.name)}" type="button" title="${escapeHtml(config.path || config.name)}">
+        <button class="cluster-tile" style="--tile-color: ${colors[index % colors.length]}" data-config="${escapeHtml(config.name)}" type="button" draggable="true" title="${escapeHtml(config.path || config.name)}">
             <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>${escapeHtml(shortConfigName(config.name))}</span>
         </button>
     `).join("");
+}
+
+function moveKubeConfig(sourceName, targetName, insertAfterTarget = false) {
+    if (!sourceName || !targetName || sourceName === targetName) {
+        return;
+    }
+
+    const sourceIndex = state.kubeConfigs.findIndex(config => config.name === sourceName);
+    if (sourceIndex < 0) {
+        return;
+    }
+
+    const [movedConfig] = state.kubeConfigs.splice(sourceIndex, 1);
+    const targetIndex = state.kubeConfigs.findIndex(config => config.name === targetName);
+    if (targetIndex < 0) {
+        state.kubeConfigs.splice(sourceIndex, 0, movedConfig);
+        return;
+    }
+
+    state.kubeConfigs.splice(insertAfterTarget ? targetIndex + 1 : targetIndex, 0, movedConfig);
+    saveKubeConfigOrder();
+    renderClusterTiles();
+    renderConfigLabels();
+}
+
+function saveKubeConfigOrder() {
+    saveUiState({
+        kubeConfigOrder: state.kubeConfigs.map(config => config.name)
+    });
+}
+
+function clearClusterDropMarkers() {
+    els.clusterTiles.querySelectorAll(".cluster-tile").forEach(tile => {
+        tile.classList.remove("drop-before", "drop-after");
+    });
+}
+
+function clearClusterDragState() {
+    state.draggedConfig = "";
+    clearClusterDropMarkers();
+    els.clusterTiles.querySelectorAll(".cluster-tile").forEach(tile => {
+        tile.classList.remove("dragging");
+    });
 }
 
 function shortConfigName(name) {
@@ -1502,6 +1569,11 @@ els.kubeConfigSelect.addEventListener("change", () => {
 });
 
 els.clusterTiles.addEventListener("click", event => {
+    if (state.suppressClusterClick) {
+        state.suppressClusterClick = false;
+        return;
+    }
+
     const tile = event.target.closest(".cluster-tile[data-config]");
     if (!tile) {
         return;
@@ -1518,6 +1590,58 @@ els.clusterTiles.addEventListener("click", event => {
     }
 
     activateKubeConfig(config).catch(handleError);
+});
+
+els.clusterTiles.addEventListener("dragstart", event => {
+    const tile = event.target.closest(".cluster-tile[data-config]");
+    if (!tile) {
+        return;
+    }
+
+    state.draggedConfig = tile.dataset.config;
+    state.suppressClusterClick = true;
+    tile.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", state.draggedConfig);
+});
+
+els.clusterTiles.addEventListener("dragover", event => {
+    const tile = event.target.closest(".cluster-tile[data-config]");
+    if (!tile || !state.draggedConfig || tile.dataset.config === state.draggedConfig) {
+        clearClusterDropMarkers();
+        return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+
+    const rect = tile.getBoundingClientRect();
+    const insertAfterTarget = event.clientY > rect.top + rect.height / 2;
+    clearClusterDropMarkers();
+    tile.classList.add(insertAfterTarget ? "drop-after" : "drop-before");
+});
+
+els.clusterTiles.addEventListener("drop", event => {
+    const tile = event.target.closest(".cluster-tile[data-config]");
+    if (!tile || !state.draggedConfig) {
+        clearClusterDragState();
+        return;
+    }
+
+    event.preventDefault();
+    moveKubeConfig(
+        event.dataTransfer.getData("text/plain") || state.draggedConfig,
+        tile.dataset.config,
+        tile.classList.contains("drop-after")
+    );
+    clearClusterDragState();
+});
+
+els.clusterTiles.addEventListener("dragend", () => {
+    clearClusterDragState();
+    window.setTimeout(() => {
+        state.suppressClusterClick = false;
+    }, 200);
 });
 
 els.addConfigFolderButton.addEventListener("click", openKubeConfigFolderDialog);
