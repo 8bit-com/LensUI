@@ -868,6 +868,7 @@ input:focus {
     background: transparent;
     color: #c8ced4;
     font-size: 16px;
+    font-family: Consolas, "Courier New", monospace;
     cursor: pointer;
 }
 
@@ -884,12 +885,15 @@ input:focus {
 .panel-action-button {
     display: inline-grid;
     place-items: center;
-    width: 22px;
+    width: 24px;
     height: 22px;
     border: 0;
     border-radius: 4px;
     background: transparent;
     color: #c5cbd1;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1;
     cursor: pointer;
 }
 

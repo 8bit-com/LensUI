@@ -138,10 +138,10 @@
         <section id="logsPanel" class="logs-panel">
             <div class="logs-tabbar">
                 <div id="logsTabs" class="logs-tabs"></div>
-                <button id="addLogTabButton" class="add-tab" type="button" title="Open another logs tab">＋</button>
+                <button id="addLogTabButton" class="add-tab" type="button" title="Open another logs tab">+</button>
                 <div class="panel-actions">
-                    <button id="expandLogsButton" class="panel-action-button" type="button" title="Expand logs">⛶</button>
-                    <button id="collapseLogsButton" class="panel-action-button" type="button" title="Collapse logs">˅</button>
+                    <button id="expandLogsButton" class="panel-action-button" type="button" title="Expand logs">[]</button>
+                    <button id="collapseLogsButton" class="panel-action-button" type="button" title="Collapse logs">v</button>
                 </div>
             </div>
 
@@ -247,9 +247,20 @@
     </defs>
 </svg>
 
-<script src="/html-utils.js"></script>
-<script src="/ui-state.js"></script>
-<script src="/log-formatters.js"></script>
-<script src="/app.js"></script>
+<script src="/js/core/html-utils.js"></script>
+<script src="/js/core/ui-state.js"></script>
+<script src="/js/logs/log-formatters.js"></script>
+<script src="/js/core/app-state.js"></script>
+<script src="/js/core/api-client.js"></script>
+<script src="/js/core/ui-shell.js"></script>
+<script src="/js/kube/kube-configs.js"></script>
+<script src="/js/pods/pods.js"></script>
+<script src="/js/logs/log-tabs.js"></script>
+<script src="/js/pods/pod-details.js"></script>
+<script src="/js/pods/port-forward.js"></script>
+<script src="/js/logs/logs-panel.js"></script>
+<script src="/js/app/app-bootstrap.js"></script>
+<script src="/js/app/app-events.js"></script>
+<script src="/js/app/app.js"></script>
 </body>
 </html>

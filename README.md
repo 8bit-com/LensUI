@@ -36,6 +36,34 @@ kubernetes.kube-config-dir=C:/Users/Владимир/OneDrive/Документы
 
 The UI will show a kubeconfig selector.
 
+## Build Windows exe
+
+The project targets Java 11, but Windows exe packaging uses `jpackage`, which is available in JDK 17 or newer.
+
+Install JDK 17/21, make sure `jpackage` is on `PATH`, then run:
+
+```powershell
+.\scripts\build-exe.ps1
+```
+
+The executable app image will be created at:
+
+```text
+dist\KubernetesLensUI\KubernetesLensUI.exe
+```
+
+To build a Windows installer `.exe`, install WiX Toolset and run:
+
+```powershell
+.\scripts\build-exe.ps1 -Installer
+```
+
+You can also override the embedded server port:
+
+```powershell
+.\scripts\build-exe.ps1 -Port 8082
+```
+
 ## Configuration
 
 Edit `src/main/resources/application.properties`:
