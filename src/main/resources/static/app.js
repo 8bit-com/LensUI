@@ -13,6 +13,7 @@ const state = {
     logsAutoRefresh: true,
     logsRefreshTimer: null,
     logsLoading: false,
+    logsRequestVersion: 0,
     rawLogs: "",
     logMatches: [],
     activeLogMatchIndex: -1,
@@ -84,24 +85,6 @@ const els = {
     pageTitle: document.querySelector("#pageTitle"),
     navigatorClusterName: document.querySelector("#navigatorClusterName")
 };
-
-const UI_STATE_KEY = "k8sLensUiState";
-
-function loadUiState() {
-    try {
-        return JSON.parse(localStorage.getItem(UI_STATE_KEY)) || {};
-    } catch {
-        return {};
-    }
-}
-
-function saveUiState(updates = {}) {
-    const current = loadUiState();
-    localStorage.setItem(UI_STATE_KEY, JSON.stringify({
-        ...current,
-        ...updates
-    }));
-}
 
 function saveLogTabsState() {
     saveActiveLogTab();
@@ -195,6 +178,8 @@ async function restoreSavedLogTabs() {
         return;
     }
 
+    let request = null;
+
     try {
         setStatus("loading", "Loading pod");
 
@@ -213,12 +198,21 @@ async function restoreSavedLogTabs() {
         state.logsExhausted = Boolean(active.logsExhausted);
         state.previousPodLogsOrigin = active.previousPodLogsOrigin || null;
 
+        request = beginLogsRequest();
+        if (!request) {
+            return;
+        }
+
         renderSelectedPod();
         renderPods();
 
         els.logsView.textContent = "Loading logs...";
 
-        const logs = await fetchCurrentLogs();
+        const logs = await fetchCurrentLogs({ request });
+        if (!isCurrentLogsRequest(request)) {
+            return;
+        }
+
         renderLogs(logs);
 
         updateActiveLogTab({
@@ -233,7 +227,7 @@ async function restoreSavedLogTabs() {
         setStatus("error", "Logs error");
         console.error(error);
     } finally {
-        state.logsLoading = false;
+        finishLogsRequest(request);
     }
 }
 
@@ -440,6 +434,7 @@ function renderPods() {
 
 function createLogTab(options = {}) {
     saveActiveLogTab();
+    invalidateLogRequests();
 
     const tab = {
         id: `logs-tab-${state.nextLogTabId++}`,
@@ -523,6 +518,49 @@ function restoreLogTab(tab) {
     restartLogsAutoRefresh();
 }
 
+function podIdentity(pod) {
+    return pod ? `${pod.namespace}/${pod.name}` : "";
+}
+
+function invalidateLogRequests() {
+    state.logsRequestVersion += 1;
+    state.logsLoading = false;
+}
+
+function beginLogsRequest() {
+    if (!state.selectedPod || state.logsLoading) {
+        return null;
+    }
+
+    const pod = state.selectedPod;
+    state.logsLoading = true;
+    return {
+        version: ++state.logsRequestVersion,
+        tabId: state.activeLogTabId,
+        pod: podIdentity(pod),
+        namespace: pod.namespace,
+        podName: pod.name,
+        container: state.selectedContainer,
+        tailLines: state.currentTailLines || Number(els.tailInput.value || 300),
+        previous: Boolean(state.previousPodLogsOrigin?.previous)
+    };
+}
+
+function isCurrentLogsRequest(request) {
+    return Boolean(
+        request &&
+        request.version === state.logsRequestVersion &&
+        request.tabId === state.activeLogTabId &&
+        request.pod === podIdentity(state.selectedPod)
+    );
+}
+
+function finishLogsRequest(request) {
+    if (request && request.version === state.logsRequestVersion) {
+        state.logsLoading = false;
+    }
+}
+
 function updateActiveLogTab(updates = {}) {
     const tab = activeLogTab();
     if (!tab) {
@@ -546,6 +584,7 @@ function switchLogTab(tabId) {
     }
 
     saveActiveLogTab();
+    invalidateLogRequests();
     state.activeLogTabId = tab.id;
     restoreLogTab(tab);
     renderLogTabs();
@@ -561,6 +600,7 @@ function closeLogTab(tabId) {
         const tab = activeLogTab();
 
         if (tab) {
+            invalidateLogRequests();
             Object.assign(tab, {
                 pod: null,
                 selectedContainer: "",
@@ -590,6 +630,7 @@ function closeLogTab(tabId) {
     state.logTabs.splice(index, 1);
 
     if (closingActive) {
+        invalidateLogRequests();
         const nextTab = state.logTabs[Math.min(index, state.logTabs.length - 1)];
         state.activeLogTabId = nextTab.id;
         restoreLogTab(nextTab);
@@ -602,6 +643,7 @@ function closeLogTab(tabId) {
 
 function resetLogTabs() {
     closePodDetails();
+    invalidateLogRequests();
     state.logTabs = [];
     state.activeLogTabId = "";
     createLogTab({ silent: true });
@@ -817,6 +859,7 @@ async function selectPod(namespace, name, options = {}) {
 
     setStatus("loading", "Loading pod");
     const response = await api(`/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+    invalidateLogRequests();
     state.selectedPod = await response.json();
     state.selectedContainer = state.selectedPod.containers[0]?.name || "";
     resetLogTailLimit();
@@ -876,57 +919,68 @@ function clearSelectedPod() {
 }
 
 async function loadLogs() {
-    if (!state.selectedPod || state.logsLoading) {
+    const request = beginLogsRequest();
+    if (!request) {
         return;
     }
 
-    state.logsLoading = true;
     els.logsView.textContent = "Loading logs...";
 
     try {
         resetLogTailLimit();
-        const logs = await fetchCurrentLogs();
+        const logs = await fetchCurrentLogs({ request });
+        if (!isCurrentLogsRequest(request)) {
+            return;
+        }
+
         renderLogs(logs);
         restartLogsAutoRefresh();
     } finally {
-        state.logsLoading = false;
+        finishLogsRequest(request);
     }
 }
 
 async function refreshLogsSilently() {
-    if (!state.selectedPod || state.logsLoading) {
+    const request = beginLogsRequest();
+    if (!request) {
         return;
     }
 
-    state.logsLoading = true;
-
     try {
-        const logs = await fetchCurrentLogs();
+        const logs = await fetchCurrentLogs({ request });
+        if (!isCurrentLogsRequest(request)) {
+            return;
+        }
+
         renderLogs(logs);
     } catch (error) {
         setStatus("error", "Logs error");
         console.error(error);
     } finally {
-        state.logsLoading = false;
+        finishLogsRequest(request);
     }
 }
 
 async function fetchCurrentLogs(options = {}) {
-    const tailLines = state.currentTailLines || Number(els.tailInput.value || 300);
+    const request = options.request || null;
+    const tailLines = request?.tailLines || state.currentTailLines || Number(els.tailInput.value || 300);
     const params = new URLSearchParams();
+    const container = request?.container ?? state.selectedContainer;
 
-    if (state.selectedContainer) {
-        params.set("container", state.selectedContainer);
+    if (container) {
+        params.set("container", container);
     }
 
     params.set("tailLines", String(Math.max(1, tailLines)));
 
-    if (options.previous || state.previousPodLogsOrigin?.previous) {
+    if (options.previous || request?.previous || state.previousPodLogsOrigin?.previous) {
         params.set("previous", "true");
     }
 
     const pod = state.selectedPod;
-    const response = await api(`/api/pods/${encodeURIComponent(pod.namespace)}/${encodeURIComponent(pod.name)}/logs?${params}`);
+    const namespace = request?.namespace || pod.namespace;
+    const podName = request?.podName || pod.name;
+    const response = await api(`/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/logs?${params}`);
     return response.text();
 }
 
@@ -944,14 +998,22 @@ async function loadOlderLogs() {
         return;
     }
 
-    state.logsLoading = true;
+    const request = beginLogsRequest();
+    if (!request) {
+        return;
+    }
+
     const previousScrollHeight = els.logsView.scrollHeight;
     const previousScrollTop = els.logsView.scrollTop;
     setStatus("loading", `Loading ${nextTail} log lines`);
 
     try {
         state.currentTailLines = nextTail;
-        const logs = await fetchCurrentLogs();
+        request.tailLines = nextTail;
+        const logs = await fetchCurrentLogs({ request });
+        if (!isCurrentLogsRequest(request)) {
+            return;
+        }
 
         if (logs === state.rawLogs) {
             state.logsExhausted = true;
@@ -968,7 +1030,7 @@ async function loadOlderLogs() {
         setStatus("error", "Logs error");
         console.error(error);
     } finally {
-        state.logsLoading = false;
+        finishLogsRequest(request);
     }
 }
 
@@ -1175,150 +1237,6 @@ function currentDisplayedLogs() {
     return compactJsonLogLines(state.rawLogs);
 }
 
-function compactJsonLogLines(logs) {
-    return logs.split("\n").map(line => {
-        const trimmed = line.trim();
-
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-            return line;
-        }
-
-        try {
-            const entry = JSON.parse(trimmed);
-
-            if (!Object.prototype.hasOwnProperty.call(entry, "timestamp") || !Object.prototype.hasOwnProperty.call(entry, "message")) {
-                return line;
-            }
-
-            return `${entry.timestamp} ${entry.level || ""} ${entry.message}`.trim();
-        } catch {
-            return compactJsonLineByPattern(line);
-        }
-    }).join("\n");
-}
-
-function compactJsonLineByPattern(line) {
-    const timestampMatch = line.match(/"timestamp"\s*:\s*"([^"]*)"/);
-    const levelMatch = line.match(/"level"\s*:\s*"(TRACE|DEBUG|INFO|WARN|ERROR)"/i);
-    const messageMatch = line.match(/"message"\s*:\s*("(?:\\.|[^"\\])*")/);
-
-    if (!timestampMatch || !messageMatch) {
-        return line;
-    }
-
-    let message = messageMatch[1];
-
-    try {
-        message = JSON.parse(messageMatch[1]);
-    } catch {
-        message = messageMatch[1].slice(1, -1);
-    }
-
-    return `${timestampMatch[1]} ${levelMatch ? levelMatch[1].toUpperCase() : ""} ${message}`.trim();
-}
-
-function colorizeLevelsOnly(logs, wrapLines = true) {
-    const lines = logs.split("\n");
-
-    return lines.map(line => {
-        const content = colorizeLevelInLine(line);
-        return wrapLines ? `<span class="log-line">${content}</span>` : content;
-    }).join("\n");
-}
-
-function colorizeLevelInLine(line) {
-    const escaped = escapeHtml(line);
-    const jsonLevelPattern = /(&quot;level&quot;\s*:\s*&quot;)(TRACE|DEBUG|INFO|WARN|ERROR)(&quot;)/i;
-
-    if (jsonLevelPattern.test(escaped)) {
-        return escaped.replace(jsonLevelPattern, (_, prefix, level, suffix) =>
-            `${prefix}<span class="${levelClass(level)}">${level}</span>${suffix}`);
-    }
-
-    return escaped.replace(/\b(TRACE|DEBUG|INFO|WARN|ERROR)\b/i, level =>
-        `<span class="${levelClass(level)}">${level}</span>`);
-}
-
-function colorizeLogLine(line, wrapLine) {
-    const content = colorizeLogLineContent(line);
-    return wrapLine ? `<span class="log-line">${content}</span>` : content;
-}
-
-function colorizeLogLineContent(line) {
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-        return colorizeJsonLogLine(line);
-    }
-
-    return colorizePlainLogLine(line);
-}
-
-function colorizeJsonLogLine(line) {
-    if (!state.compactJsonLogs) {
-        return colorizeRawJsonLine(line);
-    }
-
-    try {
-        const entry = JSON.parse(line.trim());
-
-        if (entry && typeof entry === "object") {
-            const timestamp = entry.timestamp ? `<span class="log-ts">${escapeHtml(entry.timestamp)}</span>` : "";
-            const level = entry.level ? `<span class="${levelClass(entry.level)}">${escapeHtml(entry.level)}</span>` : "";
-            const message = entry.message ? `<span class="log-message">${escapeHtml(entry.message)}</span>` : "";
-            return [timestamp, level, message].filter(Boolean).join(" ");
-        }
-    } catch {
-        return colorizePlainLogLine(line);
-    }
-
-    return escapeHtml(line);
-}
-
-function colorizeRawJsonLine(line) {
-    return escapeHtml(line)
-        .replace(/(&quot;timestamp&quot;\s*:\s*&quot;)(.*?)(?=&quot;)/g, '$1<span class="log-ts">$2</span>')
-        .replace(/(&quot;level&quot;\s*:\s*&quot;)(TRACE|DEBUG|INFO|WARN|ERROR)(?=&quot;)/g, (_, a, level) => `${a}<span class="${levelClass(level)}">${level}</span>`)
-        .replace(/(&quot;message&quot;\s*:\s*&quot;)(.*?)(?=&quot;[,}])/g, '$1<span class="log-message">$2</span>');
-}
-
-function colorizePlainLogLine(line) {
-    const escaped = escapeHtml(line);
-
-    return escaped
-        .replace(/^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/, '<span class="log-ts">$1</span>')
-        .replace(/\b(TRACE|DEBUG|INFO|WARN|ERROR)\b/g, level => `<span class="${levelClass(level)}">${level}</span>`)
-        .replace(/\b(\d{3,7})\b(?=\s+---)/, '<span class="log-pid">$1</span>')
-        .replace(/(\[[^\]]+])/g, '<span class="log-thread">$1</span>')
-        .replace(/\b([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*){2,})\b/g, '<span class="log-module">$1</span>');
-}
-
-function detectLogLevel(line) {
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-        try {
-            const entry = JSON.parse(trimmed);
-            return normalizeLogLevel(entry.level);
-        } catch {
-            const match = line.match(/"level"\s*:\s*"(TRACE|DEBUG|INFO|WARN|ERROR)"/i);
-            return match ? normalizeLogLevel(match[1]) : null;
-        }
-    }
-
-    const match = line.match(/\b(TRACE|DEBUG|INFO|WARN|ERROR)\b/i);
-    return match ? normalizeLogLevel(match[1]) : null;
-}
-
-function normalizeLogLevel(level) {
-    const normalized = String(level || "").toUpperCase();
-    return ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"].includes(normalized) ? normalized : null;
-}
-
-function levelClass(level) {
-    return `log-level-${String(level || "").toLowerCase()}`;
-}
-
 function updateLogMatchCounter() {
     const total = state.logMatches.length;
     const current = total === 0 ? 0 : state.activeLogMatchIndex + 1;
@@ -1355,17 +1273,30 @@ function selectedPodIndex() {
 }
 
 async function selectPreviousPodLogs() {
-    if (!state.selectedPod || state.logsLoading) {
+    const originalPreviousPodLogsOrigin = state.previousPodLogsOrigin;
+    const nextPreviousPodLogsOrigin = originalPreviousPodLogsOrigin
+        ? null
+        : {
+            namespace: state.selectedPod?.namespace,
+            name: state.selectedPod?.name,
+            previous: true
+        };
+
+    state.previousPodLogsOrigin = nextPreviousPodLogsOrigin;
+
+    const request = beginLogsRequest();
+    if (!request) {
+        state.previousPodLogsOrigin = originalPreviousPodLogsOrigin;
         return;
     }
 
-    state.logsLoading = true;
-
     try {
-        if (state.previousPodLogsOrigin) {
-            state.previousPodLogsOrigin = null;
+        if (!nextPreviousPodLogsOrigin) {
+            const logs = await fetchCurrentLogs({ request });
+            if (!isCurrentLogsRequest(request)) {
+                return;
+            }
 
-            const logs = await fetchCurrentLogs();
             renderLogs(logs);
 
             updateActiveLogTab({
@@ -1376,13 +1307,11 @@ async function selectPreviousPodLogs() {
             return;
         }
 
-        state.previousPodLogsOrigin = {
-            namespace: state.selectedPod.namespace,
-            name: state.selectedPod.name,
-            previous: true
-        };
+        const logs = await fetchCurrentLogs({ request });
+        if (!isCurrentLogsRequest(request)) {
+            return;
+        }
 
-        const logs = await fetchCurrentLogs({ previous: true });
         renderLogs(logs);
 
         updateActiveLogTab({
@@ -1391,6 +1320,10 @@ async function selectPreviousPodLogs() {
 
         saveLogTabsState();
     } catch (error) {
+        if (!isCurrentLogsRequest(request)) {
+            return;
+        }
+
         const message = String(error.message || "");
 
         if (
@@ -1413,7 +1346,7 @@ async function selectPreviousPodLogs() {
         els.logsView.textContent = message;
         console.error(error);
     } finally {
-        state.logsLoading = false;
+        finishLogsRequest(request);
         updatePreviousPodLogsButton();
     }
 }
@@ -1555,15 +1488,6 @@ function setStatus(kind, text) {
     }
 
     els.clusterText.textContent = text;
-}
-
-function escapeHtml(value) {
-    return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
 }
 
 els.refreshButton.addEventListener("click", () => {
