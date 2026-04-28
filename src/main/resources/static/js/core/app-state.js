@@ -2,7 +2,7 @@ const state = {
     kubeConfigs: [],
     pendingKubeConfigFiles: [],
     draggedConfig: "",
-    mouseDraggedConfig: "",
+    clusterDrag: null,
     suppressClusterClick: false,
     namespaces: [],
     pods: [],

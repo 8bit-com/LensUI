@@ -150,10 +150,89 @@ function renderClusterTiles() {
     const colors = ["#c64113", "#df0074", "#d8d000", "#07985b", "#3a98dd", "#7c6ee6"];
 
     els.clusterTiles.innerHTML = state.kubeConfigs.map((config, index) => `
-        <button class="cluster-tile" style="--tile-color: ${colors[index % colors.length]}" data-config="${escapeHtml(config.name)}" type="button" draggable="true" title="${escapeHtml(config.path || config.name)}">
+        <button class="cluster-tile" style="--tile-color: ${colors[index % colors.length]}" data-config="${escapeHtml(config.name)}" type="button" title="${escapeHtml(config.path || config.name)}">
             <svg viewBox="0 0 48 48" aria-hidden="true"><use href="#clusterIcon"></use></svg><span>${escapeHtml(shortConfigName(config.name))}</span>
         </button>
     `).join("");
+}
+
+function beginClusterDrag(sourceName, clientX, clientY) {
+    state.clusterDrag = {
+        sourceName,
+        startX: clientX,
+        startY: clientY,
+        active: false,
+        targetName: "",
+        insertAfterTarget: false
+    };
+}
+
+function updateClusterDrag(event) {
+    const drag = state.clusterDrag;
+    if (!drag) {
+        return;
+    }
+
+    const movedX = Math.abs(event.clientX - drag.startX);
+    const movedY = Math.abs(event.clientY - drag.startY);
+
+    if (!drag.active && movedX < 3 && movedY < 3) {
+        return;
+    }
+
+    if (!drag.active) {
+        drag.active = true;
+        state.draggedConfig = drag.sourceName;
+        state.suppressClusterClick = true;
+        const sourceTile = findClusterTile(drag.sourceName);
+        if (sourceTile) {
+            sourceTile.classList.add("dragging");
+        }
+    }
+
+    const targetTile = clusterTileFromPoint(event.clientX, event.clientY);
+    if (!targetTile || targetTile.dataset.config === drag.sourceName) {
+        drag.targetName = "";
+        clearClusterDropMarkers();
+        return;
+    }
+
+    const rect = targetTile.getBoundingClientRect();
+    drag.targetName = targetTile.dataset.config;
+    drag.insertAfterTarget = event.clientY > rect.top + rect.height / 2;
+
+    clearClusterDropMarkers();
+    targetTile.classList.add(drag.insertAfterTarget ? "drop-after" : "drop-before");
+    event.preventDefault();
+}
+
+function finishClusterDrag() {
+    const drag = state.clusterDrag;
+    if (!drag) {
+        return;
+    }
+
+    if (drag.active && drag.targetName) {
+        moveKubeConfig(drag.sourceName, drag.targetName, drag.insertAfterTarget);
+    }
+
+    clearClusterDragState();
+
+    if (drag.active) {
+        window.setTimeout(() => {
+            state.suppressClusterClick = false;
+        }, 200);
+    }
+}
+
+function clusterTileFromPoint(clientX, clientY) {
+    const element = document.elementFromPoint(clientX, clientY);
+    return element && element.closest ? element.closest(".cluster-tile[data-config]") : null;
+}
+
+function findClusterTile(configName) {
+    return Array.from(els.clusterTiles.querySelectorAll(".cluster-tile[data-config]"))
+        .find(tile => tile.dataset.config === configName);
 }
 
 function moveKubeConfig(sourceName, targetName, insertAfterTarget = false) {
@@ -193,7 +272,7 @@ function clearClusterDropMarkers() {
 
 function clearClusterDragState() {
     state.draggedConfig = "";
-    state.mouseDraggedConfig = "";
+    state.clusterDrag = null;
     clearClusterDropMarkers();
     els.clusterTiles.querySelectorAll(".cluster-tile").forEach(tile => {
         tile.classList.remove("dragging");

@@ -165,7 +165,7 @@ button {
     border-color: #eef2f5;
 }
 
-.cluster-tile[draggable="true"] {
+.cluster-tile {
     cursor: grab;
 }
 
