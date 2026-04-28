@@ -15,21 +15,26 @@ import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Component
 public class KubernetesClientProvider {
+    private static final String PREF_KUBE_CONFIG_DIR = "kubeConfigDir";
 
     private final KubernetesLensProperties properties;
+    private final Preferences preferences;
     private CoreV1Api coreV1Api;
     private Path activeKubeConfigPath;
 
     public KubernetesClientProvider(KubernetesLensProperties properties) {
         this.properties = properties;
+        this.preferences = Preferences.userNodeForPackage(KubernetesClientProvider.class);
+        hydrateKubeConfigDirFromPreferences();
     }
 
     public synchronized CoreV1Api coreV1Api() {
@@ -77,6 +82,7 @@ public class KubernetesClientProvider {
 
         properties.setKubeConfigPath(null);
         properties.setKubeConfigDir(dir.toString());
+        preferences.put(PREF_KUBE_CONFIG_DIR, dir.toString());
         activeKubeConfigPath = configuredKubeConfigFiles().stream()
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("No kubeconfig files found in directory: " + dir));
@@ -204,6 +210,17 @@ public class KubernetesClientProvider {
                     .collect(Collectors.toList());
         } catch (IOException ex) {
             throw new KubernetesClientInitializationException("Cannot read kubeconfig directory: " + ex.getMessage(), ex);
+        }
+    }
+
+    private void hydrateKubeConfigDirFromPreferences() {
+        if (StringUtils.hasText(properties.getKubeConfigDir())) {
+            return;
+        }
+
+        String storedKubeConfigDir = preferences.get(PREF_KUBE_CONFIG_DIR, "").trim();
+        if (StringUtils.hasText(storedKubeConfigDir)) {
+            properties.setKubeConfigDir(storedKubeConfigDir);
         }
     }
 
