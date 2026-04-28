@@ -9,13 +9,168 @@ async function loadNamespaces() {
 }
 
 async function loadPods() {
-    setStatus("loading", "Loading pods");
+    return refreshPods({ silent: false });
+}
+
+async function refreshPodsSilently() {
+    if (document.hidden) {
+        return;
+    }
+
+    await refreshPods({ silent: true });
+}
+
+async function refreshPods(options = {}) {
+    const silent = Boolean(options.silent);
+
+    if (silent && state.podsLoading) {
+        return;
+    }
+
+    const requestVersion = ++state.podsRequestVersion;
+    state.podsLoading = true;
+
+    if (!silent) {
+        setStatus("loading", "Loading pods");
+    }
+
+    try {
+        const pods = await fetchPods();
+
+        if (requestVersion !== state.podsRequestVersion) {
+            return;
+        }
+
+        applyPods(pods);
+        await refreshOpenPodDetailsSilently();
+
+        if (requestVersion !== state.podsRequestVersion) {
+            return;
+        }
+
+        if (silent) {
+            if (els.clusterText.textContent === "Pods refresh error") {
+                setStatus("ok", "Ready");
+            }
+            return;
+        }
+
+        setStatus("ok", "Ready");
+    } catch (error) {
+        if (requestVersion !== state.podsRequestVersion) {
+            return;
+        }
+
+        if (silent) {
+            setStatus("error", "Pods refresh error");
+            console.error(error);
+            return;
+        }
+
+        throw error;
+    } finally {
+        if (requestVersion === state.podsRequestVersion) {
+            state.podsLoading = false;
+        }
+    }
+}
+
+async function fetchPods() {
     const namespace = els.namespaceSelect.value;
     const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : "";
     const response = await api(`/api/pods${query}`);
-    state.pods = await response.json();
+    return response.json();
+}
+
+function applyPods(pods) {
+    state.pods = Array.isArray(pods) ? pods : [];
+    syncVisiblePodReferences();
     filterPods();
-    setStatus("ok", "Ready");
+}
+
+function syncVisiblePodReferences() {
+    if (state.selectedPod) {
+        mergePodWithSummary(state.selectedPod, findPodSummary(state.selectedPod.namespace, state.selectedPod.name));
+    }
+
+    if (Array.isArray(state.logTabs)) {
+        state.logTabs.forEach(tab => {
+            if (tab.pod) {
+                mergePodWithSummary(tab.pod, findPodSummary(tab.pod.namespace, tab.pod.name));
+            }
+        });
+    }
+
+    if (state.detailsPod) {
+        mergePodWithSummary(state.detailsPod, findPodSummary(state.detailsPod.namespace, state.detailsPod.name));
+    }
+}
+
+function findPodSummary(namespace, name) {
+    return state.pods.find(pod => pod.namespace === namespace && pod.name === name) || null;
+}
+
+function mergePodWithSummary(target, summary) {
+    if (!target || !summary) {
+        return;
+    }
+
+    Object.assign(target, {
+        phase: summary.phase,
+        ready: summary.ready,
+        restarts: summary.restarts,
+        nodeName: summary.nodeName,
+        podIp: summary.podIp,
+        age: summary.age,
+        containers: summary.containers || []
+    });
+}
+
+async function refreshOpenPodDetailsSilently() {
+    const pod = state.detailsPod;
+
+    if (!pod) {
+        return;
+    }
+
+    if (!findPodSummary(pod.namespace, pod.name)) {
+        closePodDetails();
+        return;
+    }
+
+    try {
+        const response = await api(`/api/pods/${encodeURIComponent(pod.namespace)}/${encodeURIComponent(pod.name)}`);
+        const refreshed = await response.json();
+
+        if (!state.detailsPod ||
+            state.detailsPod.namespace !== pod.namespace ||
+            state.detailsPod.name !== pod.name) {
+            return;
+        }
+
+        state.detailsPod = refreshed;
+        renderPodDetails();
+        renderPods();
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+function startPodsAutoRefresh() {
+    stopPodsAutoRefresh();
+
+    if (!state.podsRefreshIntervalMs || state.podsRefreshIntervalMs <= 0) {
+        return;
+    }
+
+    state.podsRefreshTimer = window.setInterval(refreshPodsSilently, state.podsRefreshIntervalMs);
+}
+
+function stopPodsAutoRefresh() {
+    if (state.podsRefreshTimer) {
+        clearInterval(state.podsRefreshTimer);
+        state.podsRefreshTimer = null;
+    }
 }
 
 function filterPods() {

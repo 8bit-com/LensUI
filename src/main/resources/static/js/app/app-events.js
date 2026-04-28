@@ -277,3 +277,14 @@ document.addEventListener("keydown", event => {
         setLogsExpanded(false);
     }
 });
+
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        return;
+    }
+
+    refreshPodsSilently().catch(error => {
+        setStatus("error", "Pods refresh error");
+        console.error(error);
+    });
+});

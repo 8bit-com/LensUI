@@ -36,21 +36,25 @@ kubernetes.kube-config-dir=C:/Users/Владимир/OneDrive/Документы
 
 The UI will show a kubeconfig selector.
 
-## Build Windows exe
+## Build Windows desktop exe
 
-The project targets Java 11, but Windows exe packaging uses `jpackage`, which is available in JDK 17 or newer.
+The project targets Java 17 because the desktop shell and Windows packaging use JavaFX and `jpackage`.
 
-Install JDK 17/21, make sure `jpackage` is on `PATH`, then run:
+Install JDK 17/21, then run:
 
 ```powershell
 .\scripts\build-exe.ps1
 ```
 
-The executable app image will be created at:
+The script checks `PATH` first and then looks in the JDKs installed by IntelliJ IDEA under `%USERPROFILE%\.jdks`.
+
+The desktop app image will be created at:
 
 ```text
-dist\KubernetesLensUI\KubernetesLensUI.exe
+dist\KubernetesLensUIDesktop\KubernetesLensUIDesktop.exe
 ```
+
+The desktop launcher starts the Spring Boot backend inside the same process and opens the UI in a JavaFX window. By default it uses a random local port to avoid conflicts.
 
 To build a Windows installer `.exe`, install WiX Toolset and run:
 
@@ -62,6 +66,12 @@ You can also override the embedded server port:
 
 ```powershell
 .\scripts\build-exe.ps1 -Port 8082
+```
+
+To build the old browser-based server launcher instead of the desktop window:
+
+```powershell
+.\scripts\build-exe.ps1 -Web -AppName KubernetesLensUI
 ```
 
 ## Configuration

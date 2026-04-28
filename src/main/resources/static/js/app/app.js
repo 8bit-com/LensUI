@@ -6,4 +6,8 @@ loadKubeConfigs()
     .then(loadNamespaces)
     .then(loadPods)
     .then(restoreSavedLogTabs)
-    .catch(handleError);
+    .then(startPodsAutoRefresh)
+    .catch(error => {
+        handleError(error);
+        startPodsAutoRefresh();
+    });

@@ -63,25 +63,40 @@ function saveActiveLogTab() {
     tab.previousPodLogsOrigin = state.previousPodLogsOrigin;
 }
 
-function restoreLogTab(tab) {
+function restoreLogTab(tab, options = {}) {
     if (!tab) {
         return;
     }
 
+    const useCachedLogs = !options.skipCachedLogs;
+
     state.selectedPod = tab.pod;
     state.selectedContainer = tab.selectedContainer || "";
-    state.rawLogs = tab.rawLogs || "";
-    state.logMatches = (tab.logMatches || []).slice();
-    state.activeLogMatchIndex = tab.activeLogMatchIndex ?? -1;
+    state.rawLogs = useCachedLogs ? tab.rawLogs || "" : "";
+    state.logMatches = useCachedLogs ? (tab.logMatches || []).slice() : [];
+    state.activeLogMatchIndex = useCachedLogs ? tab.activeLogMatchIndex ?? -1 : -1;
     state.currentTailLines = tab.currentTailLines || Math.max(1, Number(els.tailInput.value || 300));
     state.logTailStep = tab.logTailStep || state.currentTailLines;
     state.logsExhausted = Boolean(tab.logsExhausted);
     state.previousPodLogsOrigin = tab.previousPodLogsOrigin || null;
 
     renderSelectedPod();
-    renderHighlightedLogs();
+    if (useCachedLogs) {
+        renderHighlightedLogs();
+    } else {
+        els.logsView.textContent = tab.pod ? "Loading logs..." : "";
+        updateLogMatchCounter();
+    }
     renderPods();
     restartLogsAutoRefresh();
+}
+
+function refreshActiveLogTabAfterClose(tabId) {
+    window.requestAnimationFrame(() => {
+        if (tabId === state.activeLogTabId) {
+            refreshLogsSilently().catch(handleError);
+        }
+    });
 }
 
 function podIdentity(pod) {
@@ -199,7 +214,12 @@ function closeLogTab(tabId) {
         invalidateLogRequests();
         const nextTab = state.logTabs[Math.min(index, state.logTabs.length - 1)];
         state.activeLogTabId = nextTab.id;
-        restoreLogTab(nextTab);
+        restoreLogTab(nextTab, { skipCachedLogs: true });
+        renderLogTabs();
+
+        if (nextTab.pod) {
+            refreshActiveLogTabAfterClose(nextTab.id);
+        }
     } else {
         renderLogTabs();
     }

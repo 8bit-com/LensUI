@@ -49,20 +49,25 @@ function orderKubeConfigs(configs) {
 async function activateKubeConfig(name) {
     saveActiveLogTab();
     saveLogTabsState();
+    stopPodsAutoRefresh();
 
-    setStatus("loading", "Switching kubeconfig");
+    try {
+        setStatus("loading", "Switching kubeconfig");
 
-    const response = await api(`/api/kubeconfigs/${encodeURIComponent(name)}/activate`, {
-        method: "POST"
-    });
+        const response = await api(`/api/kubeconfigs/${encodeURIComponent(name)}/activate`, {
+            method: "POST"
+        });
 
-    applyKubeConfigs(await response.json());
+        applyKubeConfigs(await response.json());
 
-    await loadNamespaces();
-    await loadPods();
+        await loadNamespaces();
+        await loadPods();
 
-    renderLogTabs();
-    restoreLogTab(activeLogTab());
+        renderLogTabs();
+        restoreLogTab(activeLogTab());
+    } finally {
+        startPodsAutoRefresh();
+    }
 }
 
 function openKubeConfigFolderDialog() {
@@ -94,6 +99,7 @@ async function loadKubeConfigFolder() {
 
     els.kubeConfigFolderError.textContent = "";
     els.saveKubeConfigFolderButton.disabled = true;
+    stopPodsAutoRefresh();
 
     try {
         if (directory) {
@@ -124,6 +130,7 @@ async function loadKubeConfigFolder() {
         els.kubeConfigFolderError.textContent = error.message;
     } finally {
         els.saveKubeConfigFolderButton.disabled = false;
+        startPodsAutoRefresh();
     }
 }
 

@@ -1,5 +1,6 @@
 target/
+dist/
 .idea/
 *.log
 *.class
-
+config/imported-kubeconfigs/

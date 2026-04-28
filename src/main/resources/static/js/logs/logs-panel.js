@@ -506,8 +506,9 @@ function currentLogsHeight() {
 
 function setLogsHeight(height) {
     const viewportHeight = window.innerHeight || 800;
+    const fixedRowsHeight = 36 + 44 + 6;
     const min = 160;
-    const max = Math.max(220, viewportHeight - 180);
+    const max = Math.max(220, viewportHeight - fixedRowsHeight);
     const clamped = Math.min(max, Math.max(min, Math.round(height)));
 
     els.lens.style.setProperty("--logs-height", `${clamped}px`);
