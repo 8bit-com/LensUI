@@ -193,6 +193,10 @@ function clearClusterDropMarkers() {
 
 function clearClusterDragState() {
     state.draggedConfig = "";
+    state.mouseDraggedConfig = "";
+    state.mouseDragActive = false;
+    state.mouseDropTargetConfig = "";
+    state.mouseDropAfterTarget = false;
     clearClusterDropMarkers();
     els.clusterTiles.querySelectorAll(".cluster-tile").forEach(tile => {
         tile.classList.remove("dragging");

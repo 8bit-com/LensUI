@@ -47,6 +47,76 @@ els.clusterTiles.addEventListener("dragstart", event => {
     event.dataTransfer.setData("text/plain", state.draggedConfig);
 });
 
+els.clusterTiles.addEventListener("mousedown", event => {
+    if (event.button !== 0) {
+        return;
+    }
+
+    const tile = event.target.closest(".cluster-tile[data-config]");
+    if (!tile) {
+        return;
+    }
+
+    state.mouseDraggedConfig = tile.dataset.config;
+    state.mouseDragStartX = event.clientX;
+    state.mouseDragStartY = event.clientY;
+    state.mouseDragActive = false;
+    state.mouseDropTargetConfig = "";
+    state.mouseDropAfterTarget = false;
+});
+
+document.addEventListener("mousemove", event => {
+    if (!state.mouseDraggedConfig || (event.buttons & 1) === 0) {
+        return;
+    }
+
+    const moved = Math.abs(event.clientX - state.mouseDragStartX) + Math.abs(event.clientY - state.mouseDragStartY);
+    if (!state.mouseDragActive && moved < 6) {
+        return;
+    }
+
+    if (!state.mouseDragActive) {
+        state.mouseDragActive = true;
+        state.draggedConfig = state.mouseDraggedConfig;
+        state.suppressClusterClick = true;
+        const sourceTile = els.clusterTiles.querySelector(`.cluster-tile[data-config="${CSS.escape(state.draggedConfig)}"]`);
+        if (sourceTile) {
+            sourceTile.classList.add("dragging");
+        }
+    }
+
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    const tile = element ? element.closest(".cluster-tile[data-config]") : null;
+    if (!tile || tile.dataset.config === state.draggedConfig) {
+        state.mouseDropTargetConfig = "";
+        state.mouseDropAfterTarget = false;
+        clearClusterDropMarkers();
+        return;
+    }
+
+    const rect = tile.getBoundingClientRect();
+    state.mouseDropTargetConfig = tile.dataset.config;
+    state.mouseDropAfterTarget = event.clientY > rect.top + rect.height / 2;
+    clearClusterDropMarkers();
+    tile.classList.add(state.mouseDropAfterTarget ? "drop-after" : "drop-before");
+});
+
+document.addEventListener("mouseup", event => {
+    if (!state.draggedConfig) {
+        state.mouseDraggedConfig = "";
+        return;
+    }
+
+    if (state.mouseDropTargetConfig && state.mouseDropTargetConfig !== state.draggedConfig) {
+        moveKubeConfig(state.draggedConfig, state.mouseDropTargetConfig, state.mouseDropAfterTarget);
+    }
+
+    clearClusterDragState();
+    window.setTimeout(() => {
+        state.suppressClusterClick = false;
+    }, 200);
+});
+
 els.clusterTiles.addEventListener("dragover", event => {
     const tile = event.target.closest(".cluster-tile[data-config]");
     if (!tile || !state.draggedConfig || tile.dataset.config === state.draggedConfig) {
@@ -88,7 +158,21 @@ els.clusterTiles.addEventListener("dragend", () => {
 
 els.addConfigFolderButton.addEventListener("click", openKubeConfigFolderDialog);
 
-els.chooseKubeConfigFolderButton.addEventListener("click", () => {
+els.chooseKubeConfigFolderButton.addEventListener("click", async () => {
+    try {
+        const response = await api("/api/desktop/select-directory");
+        const payload = await response.json();
+        if (payload && payload.path) {
+            els.kubeConfigDirInput.value = payload.path;
+            state.pendingKubeConfigFiles = [];
+            els.kubeConfigFolderInput.value = "";
+            els.kubeConfigFolderChoice.textContent = payload.path;
+            return;
+        }
+    } catch (error) {
+        // Fallback to browser-based folder input.
+    }
+
     els.kubeConfigFolderInput.click();
 });
 
