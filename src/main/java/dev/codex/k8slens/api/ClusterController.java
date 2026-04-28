@@ -21,10 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.constraints.Min;
+import javax.swing.JFileChooser;
+import javax.swing.SwingUtilities;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RestController
 @RequestMapping("/api")
@@ -91,6 +95,28 @@ public class ClusterController {
 
         portForwardService.stopAll();
         return clientProvider.useKubeConfigDirectory(importDir.toString());
+    }
+
+    @GetMapping("/desktop/select-directory")
+    public Map<String, String> selectDirectory() {
+        AtomicReference<String> selectedPath = new AtomicReference<>("");
+
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle("Choose kubeconfig folder");
+                chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+                chooser.setMultiSelectionEnabled(false);
+                int result = chooser.showOpenDialog(null);
+                if (result == JFileChooser.APPROVE_OPTION && chooser.getSelectedFile() != null) {
+                    selectedPath.set(chooser.getSelectedFile().getAbsolutePath());
+                }
+            });
+        } catch (Exception ignored) {
+            return Map.of("path", "");
+        }
+
+        return Map.of("path", selectedPath.get());
     }
 
     @GetMapping("/namespaces")
