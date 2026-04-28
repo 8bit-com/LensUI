@@ -47,6 +47,57 @@ els.clusterTiles.addEventListener("dragstart", event => {
     event.dataTransfer.setData("text/plain", state.draggedConfig);
 });
 
+els.clusterTiles.addEventListener("mousedown", event => {
+    if (event.button !== 0) {
+        return;
+    }
+
+    const tile = event.target.closest(".cluster-tile[data-config]");
+    if (!tile) {
+        return;
+    }
+
+    state.mouseDraggedConfig = tile.dataset.config;
+});
+
+els.clusterTiles.addEventListener("mouseover", event => {
+    const tile = event.target.closest(".cluster-tile[data-config]");
+    if (!tile || !state.mouseDraggedConfig || tile.dataset.config === state.mouseDraggedConfig) {
+        clearClusterDropMarkers();
+        return;
+    }
+
+    if (!state.draggedConfig) {
+        state.draggedConfig = state.mouseDraggedConfig;
+        state.suppressClusterClick = true;
+        const sourceTile = els.clusterTiles.querySelector(`.cluster-tile[data-config="${CSS.escape(state.draggedConfig)}"]`);
+        if (sourceTile) {
+            sourceTile.classList.add("dragging");
+        }
+    }
+
+    clearClusterDropMarkers();
+    tile.classList.add("drop-after");
+});
+
+document.addEventListener("mouseup", event => {
+    if (!state.draggedConfig) {
+        state.mouseDraggedConfig = "";
+        return;
+    }
+
+    const tile = event.target.closest ? event.target.closest(".cluster-tile[data-config]") : null;
+    if (tile && tile.dataset.config && tile.dataset.config !== state.draggedConfig) {
+        moveKubeConfig(state.draggedConfig, tile.dataset.config, tile.classList.contains("drop-after"));
+    }
+
+    clearClusterDragState();
+    state.mouseDraggedConfig = "";
+    window.setTimeout(() => {
+        state.suppressClusterClick = false;
+    }, 200);
+});
+
 els.clusterTiles.addEventListener("dragover", event => {
     const tile = event.target.closest(".cluster-tile[data-config]");
     if (!tile || !state.draggedConfig || tile.dataset.config === state.draggedConfig) {
