@@ -519,13 +519,13 @@ function setLogsExpanded(expanded) {
 
     if (expanded) {
         els.lens.classList.remove("logs-collapsed");
-        els.collapseLogsButton.textContent = "v";
+        els.collapseLogsButton.dataset.icon = "collapse";
         els.collapseLogsButton.title = "Collapse logs";
         saveUiState({ logsCollapsed: false });
     }
 
     els.lens.classList.toggle("logs-expanded", expanded);
-    els.expandLogsButton.textContent = expanded ? "><" : "[]";
+    els.expandLogsButton.dataset.icon = expanded ? "restore" : "maximize";
     els.expandLogsButton.title = expanded ? "Restore logs panel" : "Expand logs";
 
     saveUiState({ logsExpanded: expanded });
@@ -540,13 +540,13 @@ function setLogsExpanded(expanded) {
 function setLogsCollapsed(collapsed) {
     if (collapsed) {
         els.lens.classList.remove("logs-expanded");
-        els.expandLogsButton.textContent = "[]";
+        els.expandLogsButton.dataset.icon = "maximize";
         els.expandLogsButton.title = "Expand logs";
         saveUiState({ logsExpanded: false });
     }
 
     els.lens.classList.toggle("logs-collapsed", collapsed);
-    els.collapseLogsButton.textContent = collapsed ? "^" : "v";
+    els.collapseLogsButton.dataset.icon = collapsed ? "expand" : "collapse";
     els.collapseLogsButton.title = collapsed ? "Restore logs panel" : "Collapse logs";
 
     saveUiState({ logsCollapsed: collapsed });

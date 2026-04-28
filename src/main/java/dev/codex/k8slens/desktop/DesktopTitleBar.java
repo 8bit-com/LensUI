@@ -9,6 +9,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
 final class DesktopTitleBar {
@@ -40,14 +41,13 @@ final class DesktopTitleBar {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button minimize = windowButton("-");
+        Button minimize = windowButton(windowIcon("minimize"), "#2a2f34");
         minimize.setOnAction(event -> stage.setIconified(true));
 
-        Button maximize = windowButton("[]");
+        Button maximize = windowButton(windowIcon("maximize"), "#2a2f34");
         maximize.setOnAction(event -> toggleMaximized(stage));
 
-        Button close = windowButton("x");
-        close.setStyle(windowButtonStyle() + "-fx-font-size: 14px;");
+        Button close = windowButton(windowIcon("close"), "#c43b32");
         close.setOnAction(event -> Platform.exit());
 
         titleBar.getChildren().addAll(appIcon, titleLabel, spacer, minimize, maximize, close);
@@ -81,23 +81,63 @@ final class DesktopTitleBar {
         });
     }
 
-    private Button windowButton(String text) {
-        Button button = new Button(text);
+    private Button windowButton(Node icon, String hoverColor) {
+        Button button = new Button();
         button.getStyleClass().add(WINDOW_CONTROL_CLASS);
         button.setMinSize(46, 28);
         button.setPrefSize(46, 28);
         button.setMaxSize(46, 28);
+        button.setGraphic(icon);
         button.setStyle(windowButtonStyle());
+        button.setOnMouseEntered(event -> button.setStyle(windowButtonStyle(hoverColor)));
+        button.setOnMouseExited(event -> button.setStyle(windowButtonStyle()));
         return button;
     }
 
     private String windowButtonStyle() {
+        return windowButtonStyle("transparent");
+    }
+
+    private String windowButtonStyle(String backgroundColor) {
         return "-fx-background-color: transparent;"
                 + "-fx-background-radius: 0;"
                 + "-fx-border-width: 0;"
-                + "-fx-text-fill: #d8dde2;"
-                + "-fx-font-size: 12px;"
+                + "-fx-background-color: " + backgroundColor + ";"
                 + "-fx-padding: 0;";
+    }
+
+    private Node windowIcon(String type) {
+        if ("minimize".equals(type)) {
+            Region line = new Region();
+            line.setMinSize(12, 1);
+            line.setPrefSize(12, 1);
+            line.setMaxSize(12, 1);
+            line.setStyle("-fx-background-color: #d8dde2;");
+            return line;
+        }
+
+        if ("maximize".equals(type)) {
+            Region square = new Region();
+            square.setMinSize(10, 10);
+            square.setPrefSize(10, 10);
+            square.setMaxSize(10, 10);
+            square.setStyle("-fx-border-color: #d8dde2; -fx-border-width: 1.2; -fx-background-color: transparent;");
+            return square;
+        }
+
+        Region first = closeLine(45);
+        Region second = closeLine(-45);
+        return new StackPane(first, second);
+    }
+
+    private Region closeLine(double rotate) {
+        Region line = new Region();
+        line.setMinSize(13, 1.5);
+        line.setPrefSize(13, 1.5);
+        line.setMaxSize(13, 1.5);
+        line.setRotate(rotate);
+        line.setStyle("-fx-background-color: #d8dde2;");
+        return line;
     }
 
     private boolean isWindowButtonEvent(MouseEvent event) {

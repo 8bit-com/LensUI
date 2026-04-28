@@ -42,13 +42,13 @@ function restoreUiState() {
 
     if (saved.logsExpanded) {
         els.lens.classList.add("logs-expanded");
-        els.expandLogsButton.textContent = "><";
+        els.expandLogsButton.dataset.icon = "restore";
         els.expandLogsButton.title = "Restore logs panel";
     }
 
     if (saved.logsCollapsed) {
         els.lens.classList.add("logs-collapsed");
-        els.collapseLogsButton.textContent = "^";
+        els.collapseLogsButton.dataset.icon = "expand";
         els.collapseLogsButton.title = "Restore logs panel";
     }
 }
