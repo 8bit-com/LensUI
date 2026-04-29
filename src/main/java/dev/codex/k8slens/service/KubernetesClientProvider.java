@@ -3,6 +3,7 @@ package dev.codex.k8slens.service;
 import dev.codex.k8slens.config.KubernetesLensProperties;
 import dev.codex.k8slens.model.KubeConfigSummary;
 import io.kubernetes.client.openapi.ApiClient;
+import io.kubernetes.client.openapi.apis.CustomObjectsApi;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.util.Config;
 import org.springframework.stereotype.Component;
@@ -28,7 +29,9 @@ public class KubernetesClientProvider {
 
     private final KubernetesLensProperties properties;
     private final Preferences preferences;
+    private ApiClient apiClient;
     private CoreV1Api coreV1Api;
+    private CustomObjectsApi customObjectsApi;
     private Path activeKubeConfigPath;
 
     public KubernetesClientProvider(KubernetesLensProperties properties) {
@@ -39,15 +42,16 @@ public class KubernetesClientProvider {
 
     public synchronized CoreV1Api coreV1Api() {
         if (coreV1Api == null) {
-            try {
-                ApiClient client = createClient();
-                io.kubernetes.client.openapi.Configuration.setDefaultApiClient(client);
-                coreV1Api = new CoreV1Api(client);
-            } catch (IOException ex) {
-                throw new KubernetesClientInitializationException("Cannot initialize Kubernetes client: " + ex.getMessage(), ex);
-            }
+            coreV1Api = new CoreV1Api(apiClient());
         }
         return coreV1Api;
+    }
+
+    public synchronized CustomObjectsApi customObjectsApi() {
+        if (customObjectsApi == null) {
+            customObjectsApi = new CustomObjectsApi(apiClient());
+        }
+        return customObjectsApi;
     }
 
     public synchronized List<KubeConfigSummary> listKubeConfigs() {
@@ -67,7 +71,7 @@ public class KubernetesClientProvider {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Kubeconfig not found in configured directory: " + name));
         activeKubeConfigPath = selected;
-        coreV1Api = null;
+        resetApis();
     }
 
     public synchronized List<KubeConfigSummary> useKubeConfigDirectory(String directory) {
@@ -86,7 +90,7 @@ public class KubernetesClientProvider {
         activeKubeConfigPath = configuredKubeConfigFiles().stream()
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("No kubeconfig files found in directory: " + dir));
-        coreV1Api = null;
+        resetApis();
         return listKubeConfigs();
     }
 
@@ -127,6 +131,24 @@ public class KubernetesClientProvider {
             return Config.fromConfig(normalizedKubeConfigPath(selectedPath).toString());
         }
         return Config.defaultClient();
+    }
+
+    private ApiClient apiClient() {
+        if (apiClient == null) {
+            try {
+                apiClient = createClient();
+                io.kubernetes.client.openapi.Configuration.setDefaultApiClient(apiClient);
+            } catch (IOException ex) {
+                throw new KubernetesClientInitializationException("Cannot initialize Kubernetes client: " + ex.getMessage(), ex);
+            }
+        }
+        return apiClient;
+    }
+
+    private void resetApis() {
+        apiClient = null;
+        coreV1Api = null;
+        customObjectsApi = null;
     }
 
     @SuppressWarnings("unchecked")

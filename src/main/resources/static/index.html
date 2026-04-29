@@ -12,6 +12,10 @@
 <div class="lens">
     <aside class="cluster-rail">
         <div id="clusterTiles" class="cluster-list"></div>
+        <button id="portForwardsButton" class="rail-port-forwards-button" type="button" title="Port forwards">
+            <span>PF</span>
+            <span id="portForwardsCount" class="rail-count">0</span>
+        </button>
         <button id="addConfigFolderButton" class="rail-add-button" type="button" title="Add kubeconfig folder">+</button>
     </aside>
 
@@ -103,7 +107,7 @@
             <div class="pod-details-body">
                 <section class="details-section">
                     <h3>Metrics</h3>
-                    <div class="metrics-placeholder">
+                    <div id="metricsPanel" class="metrics-placeholder">
                         <div class="metrics-spinner">( )</div>
                     </div>
                 </section>
@@ -187,10 +191,7 @@
         <div class="port-forward-dialog">
             <header class="port-forward-head">Port Forwarding for <span id="portForwardPodName"></span></header>
             <div class="port-forward-body">
-                <label class="port-forward-local">
-                    <span>Local port to forward from:</span>
-                    <input id="portForwardLocalPort" type="number" min="1" placeholder="Random">
-                </label>
+                <div id="portForwardRows" class="port-forward-rows"></div>
                 <label class="port-forward-check">
                     <input id="portForwardHttps" type="checkbox">
                     <span>https</span>
@@ -203,6 +204,40 @@
             <footer class="port-forward-actions">
                 <button id="cancelPortForwardButton" class="modal-button secondary" type="button">Cancel</button>
                 <button id="startPortForwardButton" class="modal-button primary" type="button">Start</button>
+            </footer>
+        </div>
+    </div>
+
+    <div id="portForwardsModal" class="modal-backdrop hidden">
+        <div class="port-forwards-dialog">
+            <header class="port-forwards-head">
+                <span>Port Forwards</span>
+                <span id="portForwardManagementCount" class="item-count">0 active</span>
+            </header>
+            <div class="port-forwards-body">
+                <div class="port-forwards-table-wrap">
+                    <table class="port-forwards-table">
+                        <thead>
+                        <tr>
+                            <th>Local</th>
+                            <th>Remote</th>
+                            <th>Namespace</th>
+                            <th>Pod</th>
+                            <th>URL</th>
+                            <th class="actions-col">Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="portForwardsBody"></tbody>
+                    </table>
+                    <div id="emptyPortForwards" class="empty hidden">No active port forwards</div>
+                </div>
+            </div>
+            <footer class="port-forwards-actions">
+                <button id="closePortForwardsButton" class="modal-button secondary" type="button">Close</button>
+                <div class="port-forwards-action-group">
+                    <button id="refreshPortForwardsButton" class="modal-button secondary" type="button">Refresh</button>
+                    <button id="stopAllPortForwardsButton" class="modal-button primary" type="button">Stop all</button>
+                </div>
             </footer>
         </div>
     </div>

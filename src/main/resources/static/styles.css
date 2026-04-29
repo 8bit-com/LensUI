@@ -259,6 +259,46 @@ button {
     cursor: pointer;
 }
 
+.rail-port-forwards-button {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 34px;
+    border: 1px solid #2f363d;
+    border-radius: 4px;
+    background: #1d2226;
+    color: #d8dde2;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.rail-port-forwards-button:hover,
+.rail-port-forwards-button.active {
+    border-color: #2d8fd2;
+    background: #1b3040;
+    color: #fff;
+}
+
+.rail-count {
+    position: absolute;
+    right: -5px;
+    top: -5px;
+    display: inline-grid;
+    place-items: center;
+    min-width: 17px;
+    height: 17px;
+    border: 1px solid #101316;
+    border-radius: 999px;
+    background: #2d8fd2;
+    color: #ffffff;
+    padding: 0 4px;
+    font-size: 10px;
+    font-weight: 800;
+}
+
 .rail-add-button:hover {
     border-color: #46505a;
     background: #252b30;
@@ -581,11 +621,9 @@ input:focus {
 
 .metrics-placeholder {
     position: relative;
-    height: 166px;
+    min-height: 166px;
     border: 1px solid var(--line);
-    background:
-        repeating-linear-gradient(to bottom, transparent 0, transparent 36px, var(--line-soft) 37px),
-        #202427;
+    background: #202427;
 }
 
 .metrics-spinner {
@@ -595,6 +633,96 @@ input:focus {
     place-items: center;
     color: var(--muted);
     font-weight: 700;
+}
+
+.metrics-ready {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+}
+
+.metrics-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.metric-card {
+    display: grid;
+    gap: 6px;
+    min-height: 64px;
+    border: 1px solid #343b43;
+    background: #1d2226;
+    padding: 10px 12px;
+}
+
+.metric-card span,
+.metrics-updated {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.metric-card strong {
+    color: var(--text-strong);
+    font-size: 22px;
+    line-height: 1.1;
+}
+
+.metrics-table {
+    border-top: 1px solid var(--line);
+}
+
+.metrics-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px 120px;
+    gap: 12px;
+    min-height: 32px;
+    align-items: center;
+    border-bottom: 1px solid var(--line-soft);
+    color: #c2c9cf;
+    font-size: 13px;
+}
+
+.metrics-row > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.metrics-head {
+    color: var(--text-strong);
+    font-weight: 800;
+}
+
+.metrics-empty {
+    padding: 12px 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.metrics-error {
+    display: grid;
+    min-height: 112px;
+    place-items: center;
+    padding: 16px;
+}
+
+.metrics-error-message {
+    display: grid;
+    gap: 8px;
+    max-width: 620px;
+    color: #ffb199;
+    font-size: 13px;
+    text-align: center;
+}
+
+.metrics-error-message strong {
+    color: #ffd6c8;
+}
+
+.metrics-error-hint {
+    color: var(--muted);
 }
 
 .details-table {
@@ -1324,6 +1452,7 @@ input:focus {
 }
 
 .port-forward-dialog,
+.port-forwards-dialog,
 .config-folder-dialog {
     width: min(560px, calc(100vw - 48px));
     border: 1px solid #30363c;
@@ -1331,7 +1460,12 @@ input:focus {
     box-shadow: 0 18px 46px rgb(0 0 0 / 45%);
 }
 
+.port-forwards-dialog {
+    width: min(780px, calc(100vw - 48px));
+}
+
 .port-forward-head,
+.port-forwards-head,
 .config-folder-head {
     display: flex;
     align-items: center;
@@ -1344,12 +1478,117 @@ input:focus {
     font-weight: 800;
 }
 
+.port-forwards-head {
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 58px;
+}
+
+.port-forwards-head .item-count {
+    margin-left: auto;
+}
+
 .port-forward-body,
+.port-forwards-body,
 .config-folder-body {
     padding: 30px 24px 24px;
     border-top: 1px solid #30363c;
     border-bottom: 1px solid #252a30;
     color: #c4cad0;
+}
+
+.port-forwards-body {
+    padding: 0;
+}
+
+.port-forwards-table-wrap {
+    max-height: min(52vh, 360px);
+    min-height: 112px;
+    overflow: auto;
+}
+
+.port-forwards-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.port-forwards-table th,
+.port-forwards-table td {
+    height: 34px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--line-soft);
+    color: #c2c9cf;
+    font-size: 13px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.port-forwards-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 36px;
+    background: #202427;
+    color: var(--text-strong);
+}
+
+.port-forwards-table th:nth-child(1),
+.port-forwards-table td:nth-child(1) {
+    width: 78px;
+}
+
+.port-forwards-table th:nth-child(2),
+.port-forwards-table td:nth-child(2) {
+    width: 78px;
+}
+
+.port-forwards-table th:nth-child(3),
+.port-forwards-table td:nth-child(3) {
+    width: 150px;
+}
+
+.port-forwards-table th:nth-child(4),
+.port-forwards-table td:nth-child(4) {
+    width: 170px;
+}
+
+.port-forwards-table th:nth-child(5),
+.port-forwards-table td:nth-child(5) {
+    width: 190px;
+}
+
+.port-forwards-table .actions-col {
+    width: 86px;
+    text-align: right !important;
+}
+
+.port-forward-url {
+    display: block;
+    max-width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--blue);
+    cursor: pointer;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.port-forward-table-button {
+    min-width: 58px;
+    min-height: 24px;
+    border: 1px solid #56606a;
+    border-radius: 4px;
+    background: #262c32;
+    color: #f4f6f8;
+    cursor: pointer;
+    padding: 3px 10px;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 .config-folder-field {
@@ -1385,17 +1624,72 @@ input:focus {
     font-size: 12px;
 }
 
-.port-forward-local {
+.port-forward-rows {
+    display: grid;
+    gap: 8px;
+    max-height: 240px;
+    margin-bottom: 16px;
+    overflow: auto;
+}
+
+.port-forward-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 104px;
+    align-items: center;
+    gap: 12px;
+    min-height: 38px;
+    border-bottom: 1px solid #343a42;
+}
+
+.port-forward-select {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 16px;
+    min-width: 0;
     font-size: 13px;
 }
 
-.port-forward-local input {
-    width: 66px;
-    min-height: 24px;
+.port-forward-port-check {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 0 0 13px;
+    width: 13px;
+    height: 13px;
+    min-height: 0;
+    border: 1px solid #56606a;
+    border-radius: 3px;
+    background: #20252a;
+    padding: 0;
+}
+
+.port-forward-port-check:checked {
+    border-color: #4f9bd8;
+    background:
+        linear-gradient(45deg, transparent 52%, #ffffff 52% 62%, transparent 62%) 2px 0 / 8px 9px no-repeat,
+        linear-gradient(135deg, transparent 45%, #ffffff 45% 56%, transparent 56%) 4px 0 / 8px 9px no-repeat,
+        #4f9bd8;
+}
+
+.port-forward-remote {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-strong);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.port-forward-container {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.port-forward-local-input {
+    width: 100%;
+    min-height: 26px;
     border: 0;
     border-bottom: 2px solid #4f9bd8;
     border-radius: 0;
@@ -1405,7 +1699,7 @@ input:focus {
     font-weight: 700;
 }
 
-.port-forward-local input::placeholder {
+.port-forward-local-input::placeholder {
     color: #c4cad0;
     opacity: 1;
 }
@@ -1440,6 +1734,7 @@ input:focus {
 }
 
 .port-forward-actions,
+.port-forwards-actions,
 .config-folder-actions {
     display: flex;
     align-items: center;
@@ -1447,6 +1742,17 @@ input:focus {
     min-height: 84px;
     padding: 0 24px;
     background: #262a30;
+}
+
+.port-forwards-actions {
+    gap: 12px;
+    min-height: 70px;
+}
+
+.port-forwards-action-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .modal-button {

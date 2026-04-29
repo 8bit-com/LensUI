@@ -149,7 +149,8 @@ async function refreshOpenPodDetailsSilently() {
         }
 
         state.detailsPod = refreshed;
-        renderPodDetails();
+        renderPodDetails({ keepMetrics: true });
+        loadPodMetrics(pod.namespace, pod.name, { silent: true }).catch(console.error);
         renderPods();
     } catch (error) {
         console.error(error);

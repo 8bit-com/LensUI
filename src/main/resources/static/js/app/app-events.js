@@ -2,6 +2,51 @@ els.refreshButton.addEventListener("click", () => {
     loadPods().catch(handleError);
 });
 
+if (els.portForwardsButton) {
+    els.portForwardsButton.addEventListener("click", () => {
+        openPortForwardsDialog().catch(handleError);
+    });
+}
+
+if (els.refreshPortForwardsButton) {
+    els.refreshPortForwardsButton.addEventListener("click", () => {
+        loadPortForwards().catch(handleError);
+    });
+}
+
+if (els.stopAllPortForwardsButton) {
+    els.stopAllPortForwardsButton.addEventListener("click", () => {
+        stopAllPortForwards().catch(handleError);
+    });
+}
+
+if (els.closePortForwardsButton) {
+    els.closePortForwardsButton.addEventListener("click", closePortForwardsDialog);
+}
+
+if (els.portForwardsModal) {
+    els.portForwardsModal.addEventListener("click", event => {
+        if (event.target === els.portForwardsModal) {
+            closePortForwardsDialog();
+        }
+    });
+}
+
+if (els.portForwardsBody) {
+    els.portForwardsBody.addEventListener("click", event => {
+        const stopButton = event.target.closest("[data-stop-port-forward-id]");
+        if (stopButton) {
+            stopPortForward(stopButton.dataset.stopPortForwardId).catch(handleError);
+            return;
+        }
+
+        const openButton = event.target.closest("[data-open-port-forward-url]");
+        if (openButton) {
+            window.open(openButton.dataset.openPortForwardUrl, "_blank", "noopener");
+        }
+    });
+}
+
 els.kubeConfigSelect.addEventListener("change", () => {
     if (!els.kubeConfigSelect.value) {
         return;

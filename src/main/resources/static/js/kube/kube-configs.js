@@ -62,6 +62,7 @@ async function activateKubeConfig(name) {
 
         await loadNamespaces();
         await loadPods();
+        await loadPortForwards({ silent: true });
 
         renderLogTabs();
         restoreLogTab(activeLogTab());
@@ -126,6 +127,7 @@ async function loadKubeConfigFolder() {
         resetLogTabs();
         await loadNamespaces();
         await loadPods();
+        await loadPortForwards({ silent: true });
     } catch (error) {
         els.kubeConfigFolderError.textContent = error.message;
     } finally {

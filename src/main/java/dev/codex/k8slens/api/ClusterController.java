@@ -3,15 +3,18 @@ package dev.codex.k8slens.api;
 import dev.codex.k8slens.model.KubeConfigSummary;
 import dev.codex.k8slens.model.KubeConfigDirectoryRequest;
 import dev.codex.k8slens.model.PodDetails;
+import dev.codex.k8slens.model.PodResourceMetrics;
 import dev.codex.k8slens.model.PodSummary;
 import dev.codex.k8slens.model.PortForwardRequest;
 import dev.codex.k8slens.model.PortForwardSession;
 import dev.codex.k8slens.service.KubernetesClientProvider;
 import dev.codex.k8slens.service.KubernetesLensService;
+import dev.codex.k8slens.service.KubernetesMetricsService;
 import dev.codex.k8slens.service.PortForwardService;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,14 +34,17 @@ import java.util.List;
 public class ClusterController {
 
     private final KubernetesLensService service;
+    private final KubernetesMetricsService metricsService;
     private final KubernetesClientProvider clientProvider;
     private final PortForwardService portForwardService;
 
     public ClusterController(
             KubernetesLensService service,
+            KubernetesMetricsService metricsService,
             KubernetesClientProvider clientProvider,
             PortForwardService portForwardService) {
         this.service = service;
+        this.metricsService = metricsService;
         this.clientProvider = clientProvider;
         this.portForwardService = portForwardService;
     }
@@ -108,6 +114,11 @@ public class ClusterController {
         return service.getPod(namespace, name);
     }
 
+    @GetMapping("/pods/{namespace}/{name}/metrics")
+    public PodResourceMetrics podMetrics(@PathVariable String namespace, @PathVariable String name) {
+        return metricsService.podMetrics(namespace, name);
+    }
+
     @GetMapping(value = "/pods/{namespace}/{name}/logs", produces = MediaType.TEXT_PLAIN_VALUE)
     public String logs(
             @PathVariable String namespace,
@@ -123,6 +134,31 @@ public class ClusterController {
             @PathVariable String namespace,
             @PathVariable String name,
             @RequestBody PortForwardRequest request) {
-        return portForwardService.start(namespace, name, request.getRemotePort(), request.getLocalPort());
+        return portForwardService.start(namespace, name, request.getRemotePort(), request.getLocalPort(), request.isHttps());
+    }
+
+    @PostMapping("/pods/{namespace}/{name}/port-forwards")
+    public List<PortForwardSession> portForwards(
+            @PathVariable String namespace,
+            @PathVariable String name,
+            @RequestBody PortForwardRequest request) {
+        return portForwardService.start(namespace, name, request.mappings(), request.isHttps());
+    }
+
+    @GetMapping("/port-forwards")
+    public List<PortForwardSession> portForwards() {
+        return portForwardService.list();
+    }
+
+    @DeleteMapping("/port-forwards/{id}")
+    public List<PortForwardSession> stopPortForward(@PathVariable String id) {
+        portForwardService.stop(id);
+        return portForwardService.list();
+    }
+
+    @DeleteMapping("/port-forwards")
+    public List<PortForwardSession> stopPortForwards() {
+        portForwardService.stopAll();
+        return portForwardService.list();
     }
 }
