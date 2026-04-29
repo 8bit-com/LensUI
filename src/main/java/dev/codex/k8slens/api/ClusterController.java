@@ -61,6 +61,12 @@ public class ClusterController {
         return clientProvider.listKubeConfigs();
     }
 
+    @PostMapping("/kubeconfigs/order")
+    public List<KubeConfigSummary> saveKubeConfigOrder(@RequestBody List<String> names) {
+        clientProvider.saveKubeConfigOrder(names);
+        return clientProvider.listKubeConfigs();
+    }
+
     @PostMapping("/kubeconfigs/directory")
     public List<KubeConfigSummary> useKubeConfigDirectory(@RequestBody KubeConfigDirectoryRequest request) {
         portForwardService.stopAll();

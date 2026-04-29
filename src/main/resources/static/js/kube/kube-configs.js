@@ -261,8 +261,20 @@ function moveKubeConfig(sourceName, targetName, insertAfterTarget = false) {
 }
 
 function saveKubeConfigOrder() {
+    const order = state.kubeConfigs.map(config => config.name);
     saveUiState({
-        kubeConfigOrder: state.kubeConfigs.map(config => config.name)
+        kubeConfigOrder: order
+    });
+    persistKubeConfigOrder(order).catch(error => {
+        console.error(error);
+    });
+}
+
+async function persistKubeConfigOrder(order) {
+    await api("/api/kubeconfigs/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(order)
     });
 }
 

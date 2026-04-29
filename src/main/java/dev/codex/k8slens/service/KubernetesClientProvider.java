@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -26,6 +27,7 @@ import java.util.stream.Stream;
 @Component
 public class KubernetesClientProvider {
     private static final String PREF_KUBE_CONFIG_DIR = "kubeConfigDir";
+    private static final String PREF_KUBE_CONFIG_ORDER = "kubeConfigOrder";
 
     private final KubernetesLensProperties properties;
     private final Preferences preferences;
@@ -55,7 +57,7 @@ public class KubernetesClientProvider {
     }
 
     public synchronized List<KubeConfigSummary> listKubeConfigs() {
-        List<Path> files = configuredKubeConfigFiles();
+        List<Path> files = orderedKubeConfigFiles(configuredKubeConfigFiles());
         Path active = activeKubeConfigPath();
         return files.stream()
                 .map(path -> new KubeConfigSummary(
@@ -63,6 +65,27 @@ public class KubernetesClientProvider {
                         path.toString(),
                         active != null && path.equals(active)))
                 .collect(Collectors.toList());
+    }
+
+    public synchronized void saveKubeConfigOrder(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            preferences.remove(PREF_KUBE_CONFIG_ORDER);
+            flushPreferences();
+            return;
+        }
+
+        String order = names.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.joining("\n"));
+
+        if (StringUtils.hasText(order)) {
+            preferences.put(PREF_KUBE_CONFIG_ORDER, order);
+        } else {
+            preferences.remove(PREF_KUBE_CONFIG_ORDER);
+        }
+        flushPreferences();
     }
 
     public synchronized void activateKubeConfig(String name) {
@@ -235,6 +258,41 @@ public class KubernetesClientProvider {
         }
     }
 
+    private List<Path> orderedKubeConfigFiles(List<Path> files) {
+        List<String> savedOrder = savedKubeConfigOrder();
+        if (savedOrder.isEmpty()) {
+            return files;
+        }
+
+        Map<String, Integer> positionByName = savedOrder.stream()
+                .collect(Collectors.toMap(name -> name, savedOrder::indexOf, (left, right) -> left));
+
+        return files.stream()
+                .map(path -> new OrderedPath(path, files.indexOf(path)))
+                .sorted((left, right) -> {
+                    Integer leftPosition = positionByName.get(left.path.getFileName().toString());
+                    Integer rightPosition = positionByName.get(right.path.getFileName().toString());
+                    int leftOrder = leftPosition == null ? Integer.MAX_VALUE : leftPosition;
+                    int rightOrder = rightPosition == null ? Integer.MAX_VALUE : rightPosition;
+                    int result = Integer.compare(leftOrder, rightOrder);
+                    return result != 0 ? result : Integer.compare(left.originalIndex, right.originalIndex);
+                })
+                .map(ordered -> ordered.path)
+                .collect(Collectors.toList());
+    }
+
+    private List<String> savedKubeConfigOrder() {
+        String order = preferences.get(PREF_KUBE_CONFIG_ORDER, "").trim();
+        if (!StringUtils.hasText(order)) {
+            return List.of();
+        }
+
+        return order.lines()
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toList());
+    }
+
     private void hydrateKubeConfigDirFromPreferences() {
         if (StringUtils.hasText(properties.getKubeConfigDir())) {
             return;
@@ -246,9 +304,27 @@ public class KubernetesClientProvider {
         }
     }
 
+    private void flushPreferences() {
+        try {
+            preferences.flush();
+        } catch (BackingStoreException ex) {
+            throw new KubernetesClientInitializationException("Cannot save UI preferences: " + ex.getMessage(), ex);
+        }
+    }
+
     public static class KubernetesClientInitializationException extends RuntimeException {
         public KubernetesClientInitializationException(String message, Throwable cause) {
             super(message, cause);
+        }
+    }
+
+    private static class OrderedPath {
+        private final Path path;
+        private final int originalIndex;
+
+        private OrderedPath(Path path, int originalIndex) {
+            this.path = path;
+            this.originalIndex = originalIndex;
         }
     }
 }
