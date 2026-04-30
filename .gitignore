@@ -4,3 +4,6 @@ dist/
 *.log
 *.class
 config/imported-kubeconfigs/
+
+mobile/android/.gradle/
+mobile/android/build/

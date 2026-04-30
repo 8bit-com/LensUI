@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.KubernetesLensMobile" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:statusBarColor">#0f172a</item>
+    </style>
+</resources>
