@@ -96,3 +96,35 @@ Set `kubernetes.namespaces=default,kube-system` to limit the UI to specific name
 - Container selector
 - Tail logs viewer
 - Pod details with labels, annotations, and conditions
+
+## Mobile app (Android)
+
+Сделана полноценная Android-обертка (native APK) в `mobile/android`.
+
+Приложение открывает Lens UI во встроенном `WebView` и запускается как обычное мобильное приложение.
+
+### Как собрать APK
+
+1. Запустите backend на хосте:
+
+```bash
+mvn spring-boot:run
+```
+
+2. Соберите debug APK:
+
+```bash
+cd mobile/android
+./gradlew assembleDebug
+```
+
+3. Готовый APK:
+
+```text
+mobile/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Важно
+
+- В `MainActivity` по умолчанию используется `http://10.0.2.2:8080/` (это доступ к localhost хоста из Android-эмулятора).
+- Для реального устройства замените URL на адрес вашей машины в локальной сети (например, `http://192.168.1.50:8080/`).
