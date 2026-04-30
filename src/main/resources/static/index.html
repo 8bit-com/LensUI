@@ -187,6 +187,12 @@
         </section>
     </main>
 
+    <nav class="mobile-bottom-nav" aria-label="Mobile views">
+        <button class="mobile-nav-button active" type="button" data-mobile-view="pods">Pods</button>
+        <button class="mobile-nav-button" type="button" data-mobile-view="details">Details</button>
+        <button class="mobile-nav-button" type="button" data-mobile-view="logs">Logs</button>
+    </nav>
+
     <div id="portForwardModal" class="modal-backdrop hidden">
         <div class="port-forward-dialog">
             <header class="port-forward-head">Port Forwarding for <span id="portForwardPodName"></span></header>
@@ -244,7 +250,7 @@
 
     <div id="kubeConfigFolderModal" class="modal-backdrop hidden">
         <div class="config-folder-dialog">
-            <header class="config-folder-head">Add kubeconfig folder</header>
+            <header class="config-folder-head">Add kubeconfig</header>
             <div class="config-folder-body">
                 <label class="config-folder-field">
                     <span>Folder path</span>

@@ -2,6 +2,14 @@ els.refreshButton.addEventListener("click", () => {
     loadPods().catch(handleError);
 });
 
+els.mobileNavButtons.forEach(button => {
+    button.addEventListener("click", () => {
+        setMobileView(button.dataset.mobileView);
+    });
+});
+
+window.addEventListener("resize", syncMobileShell);
+
 if (els.portForwardsButton) {
     els.portForwardsButton.addEventListener("click", () => {
         openPortForwardsDialog().catch(handleError);
@@ -42,7 +50,7 @@ if (els.portForwardsBody) {
 
         const openButton = event.target.closest("[data-open-port-forward-url]");
         if (openButton) {
-            window.open(openButton.dataset.openPortForwardUrl, "_blank", "noopener");
+            openPortForwardUrl(openButton.dataset.openPortForwardUrl);
         }
     });
 }

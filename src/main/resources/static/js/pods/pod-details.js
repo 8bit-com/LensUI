@@ -5,6 +5,9 @@ async function showPodDetails(namespace, name) {
     renderPodDetails();
     loadPodMetrics(namespace, name).catch(console.error);
     renderPods();
+    if (isMobileLayout()) {
+        setMobileView("details");
+    }
     setStatus("ok", "Ready");
 }
 
@@ -67,6 +70,11 @@ function closePodDetails() {
     els.lens.classList.remove("details-open");
     if (els.podDetailsPanel) {
         els.podDetailsPanel.classList.add("hidden");
+    }
+    if (isMobileLayout() && state.mobileView === "details") {
+        setMobileView("pods");
+    } else {
+        setMobileView(state.mobileView);
     }
     renderPods();
 }
@@ -299,4 +307,7 @@ async function openDetailsLogs() {
         await selectPod(state.detailsPod.namespace, state.detailsPod.name);
     }
     setLogsCollapsed(false);
+    if (isMobileLayout()) {
+        setMobileView("logs");
+    }
 }

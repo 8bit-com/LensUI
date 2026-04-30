@@ -35,7 +35,8 @@ const state = {
     previousPodLogsOrigin: null,
     logTabs: [],
     activeLogTabId: "",
-    nextLogTabId: 1
+    nextLogTabId: 1,
+    mobileView: "pods"
 };
 
 const els = {
@@ -102,5 +103,6 @@ const els = {
     collapseLogsButton: document.querySelector("#collapseLogsButton"),
     logsView: document.querySelector("#logsView"),
     pageTitle: document.querySelector("#pageTitle"),
-    navigatorClusterName: document.querySelector("#navigatorClusterName")
+    navigatorClusterName: document.querySelector("#navigatorClusterName"),
+    mobileNavButtons: Array.from(document.querySelectorAll("[data-mobile-view]"))
 };

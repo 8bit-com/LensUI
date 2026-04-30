@@ -111,8 +111,9 @@ async function loadKubeConfigFolder() {
             });
         } else if (state.pendingKubeConfigFiles.length > 0) {
             const body = new FormData();
-            state.pendingKubeConfigFiles.forEach(file => {
+            state.pendingKubeConfigFiles.forEach((file, index) => {
                 body.append("files", file, file.webkitRelativePath || file.name);
+                body.append(`file_${index}`, file, file.webkitRelativePath || file.name);
             });
             response = await api("/api/kubeconfigs/import-folder", {
                 method: "POST",

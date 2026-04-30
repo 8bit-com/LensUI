@@ -51,6 +51,12 @@ function restoreUiState() {
         els.collapseLogsButton.dataset.icon = "expand";
         els.collapseLogsButton.title = "Restore logs panel";
     }
+
+    if (saved.mobileView) {
+        state.mobileView = saved.mobileView;
+    }
+
+    syncMobileShell();
 }
 
 async function restoreSavedLogTabs() {

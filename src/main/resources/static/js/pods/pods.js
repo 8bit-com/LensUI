@@ -226,6 +226,9 @@ async function selectPod(namespace, name, options = {}) {
     await loadLogs();
     updateActiveLogTab({ pod: state.selectedPod });
     saveLogTabsState();
+    if (isMobileLayout()) {
+        setMobileView("logs");
+    }
     setStatus("ok", "Ready");
 }
 

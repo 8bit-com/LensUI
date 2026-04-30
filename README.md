@@ -99,32 +99,36 @@ Set `kubernetes.namespaces=default,kube-system` to limit the UI to specific name
 
 ## Mobile app (Android)
 
-Сделана полноценная Android-обертка (native APK) в `mobile/android`.
+Сделано standalone Android-приложение в `mobile/android`: APK содержит Lens UI, локальный HTTP-сервер и Android-адаптер к Kubernetes API.
 
-Приложение открывает Lens UI во встроенном `WebView` и запускается как обычное мобильное приложение.
+Spring Boot backend на компьютере для APK не нужен. Для подключения к кластеру импортируйте kubeconfig прямо на телефоне через кнопку добавления kubeconfig в приложении.
+
+Телефон должен иметь сетевой доступ к Kubernetes API server. Если `clusters[].cluster.server` в kubeconfig указывает на приватный адрес вроде `10.x.x.x`, `172.16-31.x.x` или `192.168.x.x`, телефон должен быть в той же сети/VPN, иначе port-forward не сможет подключиться к API server. Лучше использовать kubeconfig с встроенными `*-data` сертификатами/ключами или bearer token; kubeconfig, который ссылается на файлы на компьютере или запускает desktop-команды через `exec`, на телефоне без этих файлов/команд не сработает.
 
 ### Как собрать APK
 
-1. Запустите backend на хосте:
+Соберите debug APK:
 
-```bash
-mvn spring-boot:run
+```powershell
+.\scripts\build-android-apk.ps1
 ```
 
-2. Соберите debug APK:
-
-```bash
-cd mobile/android
-./gradlew assembleDebug
-```
-
-3. Готовый APK:
+Готовый APK:
 
 ```text
 mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Важно
+Для ручной сборки из `mobile/android`:
 
-- В `MainActivity` по умолчанию используется `http://10.0.2.2:8080/` (это доступ к localhost хоста из Android-эмулятора).
-- Для реального устройства замените URL на адрес вашей машины в локальной сети (например, `http://192.168.1.50:8080/`).
+```powershell
+.\gradlew.bat assembleDebug
+```
+
+Port-forward в standalone APK работает через тот же kubectl-style POST/SPDY-путь, что и desktop-версия через `kubectl`. Для kubeconfig-пользователя нужны права на subresource `pods/portforward`: минимум `create`.
+
+Проверка прав:
+
+```powershell
+kubectl auth can-i create pods/portforward -n <namespace>
+```

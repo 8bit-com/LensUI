@@ -25,9 +25,33 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    sourceSets {
+        main {
+            assets.srcDirs += ['../../../src/main/resources/static']
+        }
+    }
+
+    packaging {
+        resources {
+            excludes += [
+                    'META-INF/AL2.0',
+                    'META-INF/LGPL2.1',
+                    'META-INF/DEPENDENCIES',
+                    'META-INF/LICENSE',
+                    'META-INF/LICENSE.md',
+                    'META-INF/LICENSE-notice.md',
+                    'META-INF/NOTICE',
+                    'META-INF/NOTICE.md',
+                    'META-INF/*.kotlin_module'
+            ]
+        }
+    }
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    implementation 'io.kubernetes:client-java:19.0.0'
+    implementation 'com.squareup.okhttp:okhttp:2.7.5'
+    implementation 'com.google.code.gson:gson:2.10.1'
 }

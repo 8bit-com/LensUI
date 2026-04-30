@@ -118,18 +118,26 @@ async function startPortForward() {
 
     closePortForwardDialog();
     setStatus("loading", mappings.length === 1 ? "Starting port forward" : "Starting port forwards");
-    const response = await api(`/api/pods/${encodeURIComponent(pending.namespace)}/${encodeURIComponent(pending.podName)}/port-forwards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ports: mappings, https })
-    });
-    const sessions = await response.json();
+
+    let sessions;
+    try {
+        const response = await api(`/api/pods/${encodeURIComponent(pending.namespace)}/${encodeURIComponent(pending.podName)}/port-forwards`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ports: mappings, https })
+        });
+        sessions = await response.json();
+    } catch (error) {
+        showPortForwardStartError(error);
+        return;
+    }
+
     await loadPortForwards({ silent: true });
 
     setStatus("ok", portForwardStatusMessage(sessions));
     if (openBrowser) {
         sessions.forEach(session => {
-            window.open(session.url, "_blank", "noopener");
+            openPortForwardUrl(session.url);
         });
     }
 }
@@ -185,6 +193,18 @@ function portForwardStatusMessage(sessions) {
     }
 
     return `Forwarded ${sessions.length} ports`;
+}
+
+function showPortForwardStartError(error) {
+    const message = error?.message || "Port forward error";
+    const firstLine = message.split(/\r?\n/).find(line => line.trim()) || "Port forward error";
+    setStatus("error", firstLine.length > 140 ? `${firstLine.slice(0, 137)}...` : firstLine);
+
+    if (els.logsView) {
+        els.logsView.textContent = message;
+    }
+
+    console.error(error);
 }
 
 async function loadPortForwards(options = {}) {
@@ -293,4 +313,17 @@ function stopPortForwardsAutoRefresh() {
 
 function isPortForwardsDialogOpen() {
     return els.portForwardsModal && !els.portForwardsModal.classList.contains("hidden");
+}
+
+function openPortForwardUrl(url) {
+    if (!url) {
+        return;
+    }
+
+    if (location.hostname === "127.0.0.1" && location.port === "8765") {
+        window.location.href = url;
+        return;
+    }
+
+    window.open(url, "_blank", "noopener");
 }
