@@ -137,7 +137,7 @@ async function startPortForward() {
     setStatus("ok", portForwardStatusMessage(sessions));
     if (openBrowser) {
         sessions.forEach(session => {
-            openPortForwardUrl(session.url);
+            openPortForwardUrl(portForwardClientUrl(session.url));
         });
     }
 }
@@ -251,26 +251,29 @@ function renderPortForwards() {
     els.emptyPortForwards.classList.toggle("hidden", count > 0);
     els.stopAllPortForwardsButton.disabled = count === 0;
 
-    els.portForwardsBody.innerHTML = sessions.map(session => `
-        <tr>
-            <td>
-                <button class="port-forward-link" type="button" data-open-port-forward-url="${escapeHtml(session.url)}">
-                    ${escapeHtml(session.localPort)}
-                </button>
-            </td>
-            <td>${escapeHtml(session.remotePort)}</td>
-            <td><span class="namespace-link">${escapeHtml(session.namespace)}</span></td>
-            <td title="${escapeHtml(session.podName)}">${escapeHtml(session.podName)}</td>
-            <td>
-                <button class="port-forward-url" type="button" data-open-port-forward-url="${escapeHtml(session.url)}">
-                    ${escapeHtml(session.url)}
-                </button>
-            </td>
-            <td class="actions-col">
-                <button class="port-forward-table-button" type="button" data-stop-port-forward-id="${escapeHtml(session.id)}">Stop</button>
-            </td>
-        </tr>
-    `).join("");
+    els.portForwardsBody.innerHTML = sessions.map(session => {
+        const clientUrl = portForwardClientUrl(session.url);
+        return `
+            <tr>
+                <td>
+                    <button class="port-forward-link" type="button" data-open-port-forward-url="${escapeHtml(clientUrl)}">
+                        ${escapeHtml(session.localPort)}
+                    </button>
+                </td>
+                <td>${escapeHtml(session.remotePort)}</td>
+                <td><span class="namespace-link">${escapeHtml(session.namespace)}</span></td>
+                <td title="${escapeHtml(session.podName)}">${escapeHtml(session.podName)}</td>
+                <td>
+                    <button class="port-forward-url" type="button" data-open-port-forward-url="${escapeHtml(clientUrl)}">
+                        ${escapeHtml(clientUrl)}
+                    </button>
+                </td>
+                <td class="actions-col">
+                    <button class="port-forward-table-button" type="button" data-stop-port-forward-id="${escapeHtml(session.id)}">Stop</button>
+                </td>
+            </tr>
+        `;
+    }).join("");
 }
 
 async function stopPortForward(id) {
@@ -316,14 +319,28 @@ function isPortForwardsDialogOpen() {
 }
 
 function openPortForwardUrl(url) {
-    if (!url) {
+    const clientUrl = portForwardClientUrl(url);
+    if (!clientUrl) {
         return;
     }
 
     if (location.hostname === "127.0.0.1" && location.port === "8765") {
-        window.location.href = url;
+        window.location.href = clientUrl;
         return;
     }
 
-    window.open(url, "_blank", "noopener");
+    window.open(clientUrl, "_blank", "noopener");
+}
+
+function portForwardClientUrl(url) {
+    if (!url) {
+        return "";
+    }
+
+    try {
+        const parsed = new URL(url, location.href);
+        return parsed.href.replace(/\/$/, "");
+    } catch {
+        return url;
+    }
 }

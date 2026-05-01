@@ -38,7 +38,7 @@ class MobileLensServer extends NanoHTTPD {
         this.kubernetesClient = new MobileKubernetesClient(this.context);
         this.kubernetesService = new MobileKubernetesService(kubernetesClient);
         this.metricsService = new MobileMetricsService(kubernetesClient);
-        this.portForwardService = new MobilePortForwardService(kubernetesClient);
+        this.portForwardService = new MobilePortForwardService(this.context, kubernetesClient);
     }
 
     @Override

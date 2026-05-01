@@ -165,6 +165,17 @@ class MobileKubernetesClient {
         return apiClient;
     }
 
+    synchronized File kubectlKubeConfigFile() throws IOException {
+        File file = activeKubeConfigFile();
+        if (file == null) {
+            throw new IllegalStateException("Import a kubeconfig file on the phone first");
+        }
+
+        File normalized = normalizedKubeConfigFile(file);
+        validateSupportedAuth(normalized);
+        return normalized;
+    }
+
     private File activeKubeConfigFile() {
         List<File> files = kubeConfigFiles();
         if (files.isEmpty()) {
