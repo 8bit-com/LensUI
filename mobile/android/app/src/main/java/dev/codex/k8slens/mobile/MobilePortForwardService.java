@@ -1,6 +1,8 @@
 package dev.codex.k8slens.mobile;
 
 import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
 
 import java.io.Closeable;
 import java.io.FilterInputStream;
@@ -8,12 +10,16 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -27,14 +33,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 class MobilePortForwardService {
+    private static final long KUBECTL_START_TIMEOUT_MILLIS = 30_000;
+
+    private final Context context;
     private final MobileKubernetesClient client;
     private final MobileKubectl kubectl;
+    private final String externalHost;
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final ConcurrentMap<String, RunningForward> forwards = new ConcurrentHashMap<>();
 
     MobilePortForwardService(Context context, MobileKubernetesClient client) {
+        this.context = context.getApplicationContext();
         this.client = client;
-        this.kubectl = new MobileKubectl(context, client);
+        this.kubectl = new MobileKubectl(this.context, client);
+        this.externalHost = detectExternalHost();
     }
 
     PortForwardSession start(String namespace, String podName, int remotePort, Integer requestedLocalPort, boolean https) {
@@ -49,19 +61,16 @@ class MobilePortForwardService {
             String id = UUID.randomUUID().toString();
 
             if (kubectl.isAvailable()) {
-                RunningForward forward = new KubectlForward(
-                        id,
-                        namespace,
-                        podName,
-                        remotePort,
-                        localPort == 0 ? randomLocalPort() : localPort,
-                        https);
+                KubectlProxyForward forward = new KubectlProxyForward(id, namespace, podName, remotePort, localPort, https);
                 forwards.put(id, forward);
+                startKeepAlive();
+                executor.execute(forward::acceptLoop);
                 return forward.session();
             }
 
             JavaForward forward = new JavaForward(id, namespace, podName, remotePort, localPort, https);
             forwards.put(id, forward);
+            startKeepAlive();
             executor.execute(forward::acceptLoop);
             return forward.session();
         } catch (IOException ex) {
@@ -117,11 +126,13 @@ class MobilePortForwardService {
             return false;
         }
         forward.close();
+        stopKeepAliveIfIdle();
         return true;
     }
 
     void shutdown() {
         stopAll();
+        stopKeepAlive();
         executor.shutdownNow();
     }
 
@@ -142,6 +153,32 @@ class MobilePortForwardService {
                 forwards.remove(id, forward);
             }
         });
+        stopKeepAliveIfIdle();
+    }
+
+    private void startKeepAlive() {
+        try {
+            Intent intent = new Intent(context, PortForwardKeepAliveService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private void stopKeepAliveIfIdle() {
+        if (forwards.isEmpty()) {
+            stopKeepAlive();
+        }
+    }
+
+    private void stopKeepAlive() {
+        try {
+            context.stopService(new Intent(context, PortForwardKeepAliveService.class));
+        } catch (RuntimeException ignored) {
+        }
     }
 
     private void validatePort(int port, String label) {
@@ -159,6 +196,41 @@ class MobilePortForwardService {
         }
     }
 
+    private String detectExternalHost() {
+        String fallback = null;
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+                if (!networkInterface.isUp() || networkInterface.isLoopback()) {
+                    continue;
+                }
+
+                String name = networkInterface.getName() == null
+                        ? ""
+                        : networkInterface.getName().toLowerCase(java.util.Locale.ROOT);
+                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress address = addresses.nextElement();
+                    if (address instanceof Inet4Address && !address.isLoopbackAddress()) {
+                        String host = address.getHostAddress();
+                        if (name.startsWith("wlan")
+                                || name.startsWith("eth")
+                                || name.startsWith("rndis")
+                                || name.startsWith("ap")) {
+                            return host;
+                        }
+                        if (fallback == null || address.isSiteLocalAddress()) {
+                            fallback = host;
+                        }
+                    }
+                }
+            }
+        } catch (SocketException ignored) {
+        }
+        return fallback == null ? "127.0.0.1" : fallback;
+    }
+
     private void validateRequestedLocalPorts(List<PortMapping> mappings) {
         Set<Integer> localPorts = new HashSet<>();
         for (PortMapping mapping : mappings) {
@@ -173,6 +245,31 @@ class MobilePortForwardService {
             if (!localPorts.add(mapping.localPort)) {
                 throw new IllegalArgumentException("Local port " + mapping.localPort + " is used more than once");
             }
+        }
+    }
+
+    private void sleepQuietly(long millis) throws IOException {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for Android kubectl port-forward", ex);
+        }
+    }
+
+    private void destroyProcess(Process target) {
+        if (target == null || !target.isAlive()) {
+            return;
+        }
+
+        target.destroy();
+        try {
+            if (!target.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                target.destroyForcibly();
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            target.destroyForcibly();
         }
     }
 
@@ -202,7 +299,7 @@ class MobilePortForwardService {
             this.podName = podName;
             this.remotePort = remotePort;
             this.localPort = localPort;
-            this.session = new PortForwardSession(id, namespace, podName, localPort, remotePort, https);
+            this.session = new PortForwardSession(id, namespace, podName, localPort, remotePort, https, externalHost);
             startProcess();
             ensureStarted();
         }
@@ -237,44 +334,46 @@ class MobilePortForwardService {
             executor.execute(() -> captureOutput(startedProcess));
         }
 
-        private void destroyProcess(Process target) {
-            if (target == null || !target.isAlive()) {
-                return;
+        private void ensureStarted() throws IOException {
+            long deadline = System.currentTimeMillis() + KUBECTL_START_TIMEOUT_MILLIS;
+            IOException lastError = null;
+            while (System.currentTimeMillis() < deadline) {
+                Process currentProcess = process;
+                if (currentProcess == null || !currentProcess.isAlive()) {
+                    String message = capturedOutput();
+                    throw new IOException(message.isEmpty()
+                            ? "Android kubectl port-forward exited immediately"
+                            : message);
+                }
+
+                try (Socket socket = new Socket()) {
+                    socket.connect(new InetSocketAddress("127.0.0.1", localPort), 500);
+                    return;
+                } catch (IOException ex) {
+                    lastError = ex;
+                    sleepQuietly(100);
+                }
             }
 
-            target.destroy();
-            try {
-                if (!target.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                    target.destroyForcibly();
-                }
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                target.destroyForcibly();
+            IOException failure = new IOException("Android kubectl port-forward did not open local port " + localPort);
+            if (lastError != null) {
+                failure.addSuppressed(lastError);
             }
+            String text = capturedOutput();
+            if (!text.isEmpty()) {
+                failure.addSuppressed(new IOException("kubectl output:\n" + text));
+            }
+            close();
+            throw failure;
         }
 
-        private void ensureStarted() {
-            try {
-                Thread.sleep(700);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while starting Android kubectl port-forward", ex);
-            }
-
-            Process currentProcess = process;
-            if (currentProcess == null || !currentProcess.isAlive()) {
-                String message = output.toString().trim();
-                throw new IllegalStateException(message.isEmpty()
-                        ? "Android kubectl port-forward exited immediately"
-                        : message);
+        private String capturedOutput() {
+            synchronized (output) {
+                return output.toString().trim();
             }
         }
 
         private void captureOutput(Process watchedProcess) {
-            if (watchedProcess == null) {
-                return;
-            }
-
             byte[] buffer = new byte[4096];
             int read;
             try (InputStream input = watchedProcess.getInputStream()) {
@@ -290,23 +389,295 @@ class MobilePortForwardService {
             } catch (IOException ignored) {
             } finally {
                 if (!closed && process == watchedProcess) {
-                    restartAfterUnexpectedExit();
+                    closed = true;
+                    forwards.remove(id, this);
+                }
+            }
+        }
+    }
+
+    private class KubectlProxyForward implements RunningForward {
+        private final String id;
+        private final String namespace;
+        private final String podName;
+        private final int remotePort;
+        private final ServerSocket serverSocket;
+        private final PortForwardSession session;
+        private final List<KubectlProxyConnection> connections = new CopyOnWriteArrayList<>();
+        private final int upstreamPort;
+        private final StringBuilder output = new StringBuilder();
+        private volatile Process process;
+        private volatile boolean closed;
+
+        KubectlProxyForward(String id, String namespace, String podName, int remotePort, int requestedLocalPort, boolean https) throws IOException {
+            this.id = id;
+            this.namespace = namespace;
+            this.podName = podName;
+            this.remotePort = remotePort;
+            this.serverSocket = new ServerSocket();
+            this.serverSocket.setReuseAddress(true);
+            this.serverSocket.bind(new InetSocketAddress(requestedLocalPort), 50);
+            this.upstreamPort = randomLocalPort();
+            this.session = new PortForwardSession(
+                    id,
+                    namespace,
+                    podName,
+                    serverSocket.getLocalPort(),
+                    remotePort,
+                    https,
+                    externalHost);
+            startProcess();
+            ensureStarted();
+        }
+
+        @Override
+        public PortForwardSession session() {
+            return session;
+        }
+
+        @Override
+        public boolean isClosed() {
+            return closed || process == null || !process.isAlive();
+        }
+
+        void acceptLoop() {
+            while (!closed) {
+                try {
+                    Socket socket = serverSocket.accept();
+                    KubectlProxyConnection connection = new KubectlProxyConnection(this, socket);
+                    connections.add(connection);
+                    executor.execute(connection::run);
+                } catch (SocketException ex) {
+                    if (!closed) {
+                        close();
+                    }
+                } catch (IOException ex) {
+                    if (!closed) {
+                        close();
+                    }
                 }
             }
         }
 
-        private void restartAfterUnexpectedExit() {
+        @Override
+        public void close() {
+            closed = true;
+            closeQuietly(serverSocket);
+            for (KubectlProxyConnection connection : connections) {
+                connection.close();
+            }
+            destroyProcess(process);
+            forwards.remove(id, this);
+        }
+
+        KubectlUpstreamSession openUpstreamSession() throws IOException {
+            ensureProcessRunning();
+
+            IOException lastError = null;
+            long deadline = System.currentTimeMillis() + 3_000;
+            while (System.currentTimeMillis() < deadline) {
+                Process currentProcess = process;
+                if (currentProcess == null || !currentProcess.isAlive()) {
+                    ensureProcessRunning();
+                    currentProcess = process;
+                }
+
+                try {
+                    Socket upstream = new Socket();
+                    upstream.connect(new InetSocketAddress("127.0.0.1", upstreamPort), 500);
+                    return new KubectlUpstreamSession(upstream, output);
+                } catch (IOException ex) {
+                    lastError = ex;
+                    sleepQuietly(100);
+                }
+            }
+
+            IOException failure = new IOException("Android app could not connect to active kubectl port-forward listener on internal local port " + upstreamPort);
+            if (lastError != null) {
+                failure.addSuppressed(lastError);
+            }
+            String text = capturedOutput(output);
+            if (!text.isEmpty()) {
+                failure.addSuppressed(new IOException("kubectl output:\n" + text));
+            }
+            throw failure;
+        }
+
+        private synchronized void startProcess() throws IOException {
+            if (closed) {
+                return;
+            }
+
+            synchronized (output) {
+                output.setLength(0);
+            }
+            Process startedProcess = kubectl.startPortForward(namespace, podName, upstreamPort, remotePort);
+            process = startedProcess;
+            executor.execute(() -> captureOutput(startedProcess, output));
+        }
+
+        private synchronized void ensureProcessRunning() throws IOException {
+            Process currentProcess = process;
+            if (currentProcess != null && currentProcess.isAlive()) {
+                return;
+            }
+
+            startProcess();
+            ensureStarted();
+        }
+
+        private void ensureStarted() throws IOException {
+            IOException lastError = null;
+            long deadline = System.currentTimeMillis() + KUBECTL_START_TIMEOUT_MILLIS;
+            while (System.currentTimeMillis() < deadline) {
+                Process currentProcess = process;
+                if (currentProcess == null || !currentProcess.isAlive()) {
+                    throw new IOException(startupFailureMessage(output));
+                }
+
+                try (Socket socket = new Socket()) {
+                    socket.connect(new InetSocketAddress("127.0.0.1", upstreamPort), 500);
+                    return;
+                } catch (IOException ex) {
+                    lastError = ex;
+                    sleepQuietly(100);
+                }
+            }
+
+            IOException failure = new IOException("Android kubectl port-forward did not open internal local port " + upstreamPort);
+            if (lastError != null) {
+                failure.addSuppressed(lastError);
+            }
+            String text = capturedOutput(output);
+            if (!text.isEmpty()) {
+                failure.addSuppressed(new IOException("kubectl output:\n" + text));
+            }
+            close();
+            throw failure;
+        }
+
+        private String startupFailureMessage(StringBuilder output) {
+            String message = capturedOutput(output);
+            return message.isEmpty()
+                    ? "Android kubectl port-forward exited immediately"
+                    : message;
+        }
+
+        String latestOutput() {
+            return capturedOutput(output);
+        }
+
+        private String capturedOutput(StringBuilder output) {
+            synchronized (output) {
+                return output.toString().trim();
+            }
+        }
+
+        private void captureOutput(Process watchedProcess, StringBuilder output) {
+            byte[] buffer = new byte[4096];
+            int read;
+            try (InputStream input = watchedProcess.getInputStream()) {
+                while ((read = input.read(buffer)) != -1) {
+                    String chunk = new String(buffer, 0, read, java.nio.charset.StandardCharsets.UTF_8);
+                    synchronized (output) {
+                        output.append(chunk);
+                        if (output.length() > 16 * 1024) {
+                            output.delete(0, output.length() - 16 * 1024);
+                        }
+                    }
+                }
+            } catch (IOException ignored) {
+            } finally {
+                if (!closed && process == watchedProcess) {
+                    process = null;
+                }
+            }
+        }
+
+    }
+
+    private class KubectlUpstreamSession implements Closeable {
+        private final Socket socket;
+        private final StringBuilder output;
+
+        KubectlUpstreamSession(Socket socket, StringBuilder output) {
+            this.socket = socket;
+            this.output = output;
+        }
+
+        Socket socket() {
+            return socket;
+        }
+
+        String output() {
+            synchronized (output) {
+                return output.toString().trim();
+            }
+        }
+
+        @Override
+        public void close() {
+            closeQuietly(socket);
+        }
+    }
+
+    private class KubectlProxyConnection implements Closeable {
+        private final KubectlProxyForward forward;
+        private final Socket socket;
+        private volatile KubectlUpstreamSession upstream;
+
+        KubectlProxyConnection(KubectlProxyForward forward, Socket socket) {
+            this.forward = forward;
+            this.socket = socket;
+        }
+
+        void run() {
+            AtomicBoolean responseStarted = new AtomicBoolean(false);
             try {
-                Thread.sleep(250);
-                startProcess();
-                ensureStarted();
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                closed = true;
-                forwards.remove(id, this);
-            } catch (IOException | RuntimeException ex) {
-                closed = true;
-                forwards.remove(id, this);
+                upstream = forward.openUpstreamSession();
+                Socket upstreamSocket = upstream.socket();
+                InputStream socketInput = socket.getInputStream();
+                OutputStream upstreamOutput = upstreamSocket.getOutputStream();
+                InputStream upstreamInput = upstreamSocket.getInputStream();
+                OutputStream socketOutput = markOnWrite(socket.getOutputStream(), responseStarted);
+                executor.execute(() -> pipe(socketInput, upstreamOutput, true));
+                long responseBytes = pipe(upstreamInput, socketOutput, false);
+                if (responseBytes == 0 && !responseStarted.get()) {
+                    String message = "Android kubectl port-forward closed before returning data.";
+                    String output = upstream.output();
+                    if (!output.isEmpty()) {
+                        message += "\n\nkubectl output:\n" + output;
+                    }
+                    sendHttpError(responseStarted, readablePortForwardFailure(
+                            new IOException(message),
+                            forward.namespace,
+                            forward.podName,
+                            forward.remotePort));
+                }
+            } catch (IOException ex) {
+                sendHttpError(responseStarted, readablePortForwardFailure(ex, forward.namespace, forward.podName, forward.remotePort));
+            } catch (RuntimeException ex) {
+                sendHttpError(responseStarted, readablePortForwardFailure(ex, forward.namespace, forward.podName, forward.remotePort));
+            } finally {
+                close();
+                forward.connections.remove(this);
+            }
+        }
+
+        @Override
+        public void close() {
+            closeQuietly(socket);
+            closeQuietly(upstream);
+        }
+
+        private void sendHttpError(AtomicBoolean responseStarted, String message) {
+            if (!responseStarted.compareAndSet(false, true)) {
+                return;
+            }
+
+            try {
+                writeHttpError(socket.getOutputStream(), message);
+            } catch (IOException ignored) {
             }
         }
     }
@@ -337,7 +708,8 @@ class MobilePortForwardService {
                     podName,
                     serverSocket.getLocalPort(),
                     remotePort,
-                    https);
+                    https,
+                    externalHost);
         }
 
         @Override
@@ -676,6 +1048,14 @@ class MobilePortForwardService {
                     + "the Kubernetes API endpoint or an API gateway/proxy in front of it is likely closing port-forward upgrades.";
         }
 
+        if (isInternalKubectlConnectFailure(message)) {
+            return "Android internal kubectl port-forward did not open its local listener for pod "
+                    + namespace + "/" + podName + " on port " + remotePort + ".\n\n"
+                    + "The phone reached this Android app, but the app could not connect to the temporary localhost port "
+                    + "created for the bundled kubectl process.\n\n"
+                    + "Raw internal error:\n" + message;
+        }
+
         if (isApiConnectTimeout(message)) {
             return "The phone cannot connect to the Kubernetes API endpoint required for port-forward.\n\n"
                     + "The local browser reached this Android app, but the app could not open "
@@ -699,6 +1079,9 @@ class MobilePortForwardService {
         Throwable cursor = throwable;
         while (cursor != null) {
             appendMessage(builder, cursor.getMessage());
+            for (Throwable suppressed : cursor.getSuppressed()) {
+                appendMessage(builder, suppressed.getMessage());
+            }
             cursor = cursor.getCause();
         }
         return builder.toString();
@@ -732,6 +1115,16 @@ class MobilePortForwardService {
                 || lower.contains("connection timed out")
                 || lower.contains("no route to host")
                 || lower.contains("network is unreachable");
+    }
+
+    private boolean isInternalKubectlConnectFailure(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("android kubectl port-forward")
+                || lower.contains("internal local port")
+                || lower.contains("kubectl output:");
     }
 
     private IOException combinedPortForwardFailure(IOException webSocketEx, IOException legacyEx) {

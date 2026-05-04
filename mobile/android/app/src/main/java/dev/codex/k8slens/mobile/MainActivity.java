@@ -15,8 +15,8 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 5001;
     private static final int LOCAL_PORT = 8765;
+    private static MobileLensServer server;
 
-    private MobileLensServer server;
     private ValueCallback<Uri[]> filePathCallback;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -56,8 +56,7 @@ public class MainActivity extends Activity {
         });
 
         try {
-            server = new MobileLensServer(this, LOCAL_PORT);
-            server.start();
+            ensureServerStarted();
             webView.loadUrl("http://127.0.0.1:" + LOCAL_PORT + "/");
         } catch (Exception ex) {
             Toast.makeText(this, ex.getMessage(), Toast.LENGTH_LONG).show();
@@ -104,11 +103,15 @@ public class MainActivity extends Activity {
         filePathCallback = null;
     }
 
-    @Override
-    protected void onDestroy() {
-        if (server != null) {
-            server.stop();
+    private void ensureServerStarted() throws java.io.IOException {
+        synchronized (MainActivity.class) {
+            if (server != null) {
+                return;
+            }
+
+            MobileLensServer started = new MobileLensServer(getApplicationContext(), LOCAL_PORT);
+            started.start();
+            server = started;
         }
-        super.onDestroy();
     }
 }

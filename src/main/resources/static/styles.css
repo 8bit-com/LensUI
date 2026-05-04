@@ -2160,6 +2160,135 @@ input:focus {
     .config-folder-actions {
         padding: 12px 14px;
     }
+
+    .port-forward-head {
+        text-align: center;
+        overflow-wrap: anywhere;
+    }
+
+    .port-forwards-table-wrap {
+        max-height: min(62vh, 430px);
+    }
+
+    .port-forwards-table,
+    .port-forwards-table tbody,
+    .port-forwards-table tr,
+    .port-forwards-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .port-forwards-table {
+        table-layout: auto;
+    }
+
+    .port-forwards-table thead {
+        display: none;
+    }
+
+    .port-forwards-table tbody {
+        display: grid;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .port-forwards-table tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+        min-height: 0;
+        border: 1px solid #303841;
+        border-radius: 8px;
+        background: #1b2025;
+        padding: 10px;
+    }
+
+    .port-forwards-table td {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 8px;
+        height: auto;
+        min-height: 24px;
+        border-bottom: 0;
+        padding: 0;
+        white-space: normal;
+        overflow: visible;
+    }
+
+    .port-forwards-table td::before {
+        color: var(--dim);
+        content: attr(data-label);
+        font-size: 12px;
+    }
+
+    .port-forwards-table td:nth-child(1)::before {
+        content: "Local";
+    }
+
+    .port-forwards-table td:nth-child(2)::before {
+        content: "Remote";
+    }
+
+    .port-forwards-table td:nth-child(3)::before {
+        content: "Namespace";
+    }
+
+    .port-forwards-table td:nth-child(4)::before {
+        content: "Pod";
+    }
+
+    .port-forwards-table td:nth-child(5)::before {
+        content: "URL";
+    }
+
+    .port-forwards-table td:nth-child(1),
+    .port-forwards-table td:nth-child(2),
+    .port-forwards-table td:nth-child(3),
+    .port-forwards-table td:nth-child(4),
+    .port-forwards-table td:nth-child(5) {
+        width: auto;
+    }
+
+    .port-forwards-table td:nth-child(5) {
+        grid-column: 1 / -1;
+    }
+
+    .port-forwards-table .actions-col {
+        display: flex;
+        grid-column: 1;
+        align-items: flex-start;
+        justify-content: flex-end;
+        width: auto;
+        margin-top: 4px;
+        text-align: right !important;
+    }
+
+    .port-forwards-table .actions-col::before {
+        content: none;
+    }
+
+    .port-forward-url {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-align: left;
+    }
+
+    .port-forwards-actions {
+        gap: 8px;
+    }
+
+    .port-forwards-action-group {
+        flex: 1 1 auto;
+        gap: 8px;
+        justify-content: flex-end;
+        min-width: 0;
+    }
+
+    .port-forwards-actions .modal-button {
+        min-width: 0;
+        padding-right: 10px;
+        padding-left: 10px;
+    }
 }
 
 @media (max-width: 900px) and (max-height: 520px) {

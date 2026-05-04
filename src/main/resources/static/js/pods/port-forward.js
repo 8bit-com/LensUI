@@ -137,7 +137,7 @@ async function startPortForward() {
     setStatus("ok", portForwardStatusMessage(sessions));
     if (openBrowser) {
         sessions.forEach(session => {
-            openPortForwardUrl(portForwardClientUrl(session.url));
+            openPortForwardUrl(portForwardOpenUrl(session));
         });
     }
 }
@@ -252,7 +252,7 @@ function renderPortForwards() {
     els.stopAllPortForwardsButton.disabled = count === 0;
 
     els.portForwardsBody.innerHTML = sessions.map(session => {
-        const clientUrl = portForwardClientUrl(session.url);
+        const clientUrl = portForwardSessionUrl(session);
         return `
             <tr>
                 <td>
@@ -274,6 +274,26 @@ function renderPortForwards() {
             </tr>
         `;
     }).join("");
+}
+
+function portForwardSessionUrl(session) {
+    if (!session) {
+        return "";
+    }
+
+    return portForwardClientUrl(session.externalUrl || session.url);
+}
+
+function portForwardOpenUrl(session) {
+    if (!session) {
+        return "";
+    }
+
+    if (isAndroidStandalone()) {
+        return portForwardClientUrl(session.url || session.externalUrl);
+    }
+
+    return portForwardSessionUrl(session);
 }
 
 async function stopPortForward(id) {
@@ -324,12 +344,34 @@ function openPortForwardUrl(url) {
         return;
     }
 
-    if (location.hostname === "127.0.0.1" && location.port === "8765") {
+    if (openWithAndroidBridge(clientUrl)) {
+        return;
+    }
+
+    if (isAndroidStandalone()) {
         window.location.href = clientUrl;
         return;
     }
 
     window.open(clientUrl, "_blank", "noopener");
+}
+
+function openWithAndroidBridge(url) {
+    if (!window.AndroidLens || typeof window.AndroidLens.openExternal !== "function") {
+        return false;
+    }
+
+    try {
+        window.AndroidLens.openExternal(url);
+        return true;
+    } catch (error) {
+        console.error(error);
+        return false;
+    }
+}
+
+function isAndroidStandalone() {
+    return location.hostname === "127.0.0.1" && location.port === "8765";
 }
 
 function portForwardClientUrl(url) {

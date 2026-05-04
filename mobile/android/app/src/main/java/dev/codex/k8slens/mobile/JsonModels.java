@@ -281,8 +281,20 @@ class PortForwardSession {
     private final int remotePort;
     private final String scheme;
     private final String url;
+    private final String externalUrl;
 
     PortForwardSession(String id, String namespace, String podName, int localPort, int remotePort, boolean https) {
+        this(id, namespace, podName, localPort, remotePort, https, "127.0.0.1");
+    }
+
+    PortForwardSession(
+            String id,
+            String namespace,
+            String podName,
+            int localPort,
+            int remotePort,
+            boolean https,
+            String externalHost) {
         this.id = id;
         this.namespace = namespace;
         this.podName = podName;
@@ -290,6 +302,7 @@ class PortForwardSession {
         this.remotePort = remotePort;
         this.scheme = https ? "https" : "http";
         this.url = scheme + "://127.0.0.1:" + localPort;
+        this.externalUrl = scheme + "://" + (hasText(externalHost) ? externalHost : "127.0.0.1") + ":" + localPort;
     }
 
     String getId() {
@@ -310,6 +323,10 @@ class PortForwardSession {
 
     int getRemotePort() {
         return remotePort;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }
 
